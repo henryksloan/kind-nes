@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "nes",
+    "cpu",
+    "memory",
+]

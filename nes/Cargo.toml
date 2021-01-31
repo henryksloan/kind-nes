@@ -1,0 +1,9 @@
+[package]
+name = "nes"
+version = "0.1.0"
+authors = ["Henry Sloan <henryksloan@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+cpu = { path = "../cpu" }
+memory = { path = "../memory" }
