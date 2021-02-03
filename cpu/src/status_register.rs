@@ -13,3 +13,9 @@ bitflags! {
         const BREAK = Self::BREAK_HI.bits | Self::BREAK_LO.bits;
     }
 }
+
+impl StatusRegister {
+    pub fn set_from_stack(&mut self, val: u8) {
+        self.bits = (val & !StatusRegister::BREAK_LO.bits) | StatusRegister::BREAK_HI.bits;
+    }
+}
