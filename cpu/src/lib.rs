@@ -13,6 +13,10 @@ use crate::addressing_mode::AddressingMode;
 
 use std::ops;
 
+pub const NMI_VEC: u16 = 0xFFFA;
+pub const RST_VEC: u16 = 0xFFFC;
+pub const IRQ_VEC: u16 = 0xFFFE;
+
 pub struct CPU {
     // Registers
     a: u8, // Accumulator
@@ -36,30 +40,40 @@ impl CPU {
         self.s = self.s.wrapping_sub(1);
     }
 
+    fn stack_push_u16(&mut self, data: u16) {
+        self.stack_push((data >> 8) as u8);
+        self.stack_push(data as u8);
+    }
+
     fn stack_pop(&mut self) -> u8 {
         self.s = self.s.wrapping_add(1);
         self.memory.read(0x100 + (self.s as u16))
     }
 
-    fn get_operand_address(&self, mode: AddressingMode) -> (u16, bool) {
+    fn stack_pop_u16(&mut self) -> u16 {
+        self.stack_pop() as u16 | ((self.stack_pop() as u16) << 8)
+    }
+
+
+    fn get_operand_address(&self, mode: &AddressingMode) -> (u16, bool) {
         // TODO: It would be nice to have a (separate?) function just to get data
         // But it would also have to get page cross?
         (0x0, false)
     }
 
-    fn execute_op(&mut self, op_str: &str, mode: AddressingMode) {
+    fn execute_op(&mut self, op_str: &str, mode: &AddressingMode) {
         match op_str {
             "ADC" => self.arithmetic_op(false, mode),
             "AND" => self.bit_op(ops::BitAnd::bitand, mode),
-            // "ASL" => bind_op(&CPU6502::Op_ASL),
+            "ASL" => self.shift_op(true, mode),
             "BCC" => self.branch_op(StatusRegister::CARRY, false),
             "BCS" => self.branch_op(StatusRegister::CARRY, true),
             "BEQ" => self.branch_op(StatusRegister::ZERO, true),
-            // "BIT" => bind_op(&CPU6502::Op_BIT),
+            "BIT" => self.bit(mode),
             "BMI" => self.branch_op(StatusRegister::NEGATIVE, true),
             "BNE" => self.branch_op(StatusRegister::ZERO, false),
             "BPL" => self.branch_op(StatusRegister::NEGATIVE, false),
-            // "BRK" => bind_op(&CPU6502::Op_BRK),
+            "BRK" => self.brk(),
             "BVC" => self.branch_op(StatusRegister::OVERFLOW, false),
             "BVS" => self.branch_op(StatusRegister::OVERFLOW, true),
             "CLC" => self.p.remove(StatusRegister::CARRY),
@@ -76,22 +90,22 @@ impl CPU {
             "INC" => self.step_op(1, mode),
             "INX" => self.x = self.step_reg_op(1, self.x),
             "INY" => self.y = self.step_reg_op(1, self.y),
-            // "JMP" => bind_op(&CPU6502::Op_JMP), // TODO: See if these two can be generated
-            // "JSR" => bind_op(&CPU6502::Op_JSR),
+            "JMP" => self.jump_op(true, mode),
+            "JSR" => self.jump_op(false, mode),
             "LDA" => self.a = self.load_op(mode),
             "LDX" => self.x = self.load_op(mode),
             "LDY" => self.y = self.load_op(mode),
-            // "LSR" => bind_op(&CPU6502::Op_LSR),
+            "LSR" => self.shift_op(false, mode),
             "NOP" => {},
             "ORA" => self.bit_op(ops::BitOr::bitor, mode),
             "PHA" => self.stack_push(self.a),
             "PHP" => self.stack_push(self.p.bits()),
             "PLA" => self.pla(),
             "PLP" => { let val = self.stack_pop(); self.p.set_from_stack(val) },
-            // "ROL" => bind_op(&CPU6502::Op_ROL), // TODO: Maybe these too
-            // "ROR" => bind_op(&CPU6502::Op_ROR),
-            // "RTI" => bind_op(&CPU6502::Op_RTI),
-            // "RTS" => bind_op(&CPU6502::Op_RTS),
+            "ROL" => self.rotate_op(true, mode),
+            "ROR" => self.rotate_op(false, mode),
+            "RTI" => self.rti(),
+            "RTS" => self.pc = self.stack_pop_u16(), // TODO: Add or sub something?
             "SBC" => self.arithmetic_op(true, mode),
             "SEC" => self.p.insert(StatusRegister::CARRY),
             "SED" => self.p.insert(StatusRegister::DECIMAL),
@@ -110,7 +124,7 @@ impl CPU {
     }
 
     /// Perform a binary logic operation (e.g. AND) between A and memory
-    fn bit_op(&mut self, f: impl Fn(u8, u8) -> u8, mode: AddressingMode) {
+    fn bit_op(&mut self, f: impl Fn(u8, u8) -> u8, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.a = f(self.a, data);
@@ -128,7 +142,7 @@ impl CPU {
     }
 
     /// Compare a register to memory, then set flags
-    fn compare_op(&mut self, reg: u8, mode: AddressingMode) {
+    fn compare_op(&mut self, reg: u8, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         let temp: i16 = reg as i16 - data as i16;
@@ -138,7 +152,7 @@ impl CPU {
     }
 
     /// Either increment or decrement data
-    fn step_op(&mut self, delta: i8, mode: AddressingMode) {
+    fn step_op(&mut self, delta: i8, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
         let mut data = self.memory.read(addr);
         data = if delta > 0 { data.wrapping_add(1) } else { data.wrapping_sub(1)};
@@ -157,7 +171,7 @@ impl CPU {
 
 
     /// Load memory and return it to be put into a register
-    fn load_op(&mut self, mode: AddressingMode) -> u8 {
+    fn load_op(&mut self, mode: &AddressingMode) -> u8 {
         let (addr, _) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
@@ -166,13 +180,13 @@ impl CPU {
     }
 
     /// Store data from a register into memory
-    fn store_op(&mut self, reg: u8, mode: AddressingMode) {
+    fn store_op(&mut self, reg: u8, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
         self.memory.write(addr, reg);
     }
 
-    /** Return a register value to be placed in another register,
-        setting flags if the destination is not the stack pointer  **/
+    /// Return a register value to be placed in another register,
+    /// setting flags if the destination is not the stack pointer
     fn transfer_op(&mut self, from: u8, to_stack_pointer: bool) -> u8 {
         if !to_stack_pointer {
             self.p.set(StatusRegister::NEGATIVE, (from & 0x80) != 0);
@@ -182,7 +196,7 @@ impl CPU {
     }
 
     /// Add/subtract data to/from A and set flags, possibly using decimal mode
-    fn arithmetic_op(&mut self, subtract: bool, mode: AddressingMode) {
+    fn arithmetic_op(&mut self, subtract: bool, mode: &AddressingMode) {
         let (addr, _) = self.get_operand_address(mode);
         let mut data = self.memory.read(addr);
         if subtract {
@@ -207,23 +221,93 @@ impl CPU {
         self.p.set(StatusRegister::ZERO, self.a == 0);
     }
 
+    /// Perform a left or right shift, setting flags
+    fn shift_op(&mut self, left: bool, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let mut data =
+            if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
+
+        let check_bit = if left { 0x80 } else { 0x01 };
+        self.p.set(StatusRegister::CARRY, (data & check_bit) != 0);
+        if left { data <<= 1; } else { data >>= 1; };
+        if *mode == AddressingMode::ACC {
+            self.a = data;
+        } else {
+            self.memory.write(addr, data);
+        };
+        self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, data == 0);
+    }
+
+    /// Perform a left or right rotate, setting flags
+    fn rotate_op(&mut self, left: bool, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let mut data =
+            if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
+
+        let old_carry = self.p.contains(StatusRegister::CARRY);
+        let (check_bit, carry_bit) = if left { (0x80, 0x01) } else { (0x01, 0x80) };
+        self.p.set(StatusRegister::CARRY, (data & check_bit) != 0);
+        if left { data <<= 1; } else { data >>= 1; };
+        data = if old_carry { data | carry_bit } else { data & !carry_bit };
+
+        if *mode == AddressingMode::ACC {
+            self.a = data;
+        } else {
+            self.memory.write(addr, data);
+        };
+        self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, data == 0);
+    }
+
+    fn jump_op(&mut self, save_return: bool, mode: &AddressingMode) {
+        if save_return { self.stack_push_u16(self.pc); } // TODO: Add or sub something?
+        // TODO: Set PC, perhaps using mode, but be careful between absolute and indirect
+    }
+
+    /// Test bits in memory with accumulator
+    /// 2 most significant bits are transferred from data to P [Flags N and V]
+    /// Then Flag Z is set according to data & A
+    fn bit(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
+        self.p.set(StatusRegister::OVERFLOW, (data & 0x40) != 0);
+        self.p.set(StatusRegister::ZERO, (data & self.a) == 0)
+    }
+
+    /// Force a system interrupt
+    fn brk(&mut self) {
+        self.stack_push_u16(self.pc + 2);
+        self.stack_push((self.p | StatusRegister::BREAK).bits());
+        self.p.insert(StatusRegister::IRQ_DISABLE);
+        self.pc = self.memory.read_u16(IRQ_VEC);
+    }
+
     /// Pop from stack, update the value of A, and set flags
     fn pla(&mut self) {
         self.a = self.stack_pop();
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.a == 0);
     }
+
+    /// Return from interrupt
+    fn rti(&mut self) {
+        let val = self.stack_pop();
+        self.p.set_from_stack(val);
+        self.pc = self.stack_pop_u16();
+    }
 }
 
-/** Translates a binary integer to a "Binary Coded Decimal"
-    i.e. decimal(49) => 0x49 **/
+/// Translates a binary integer to a "Binary Coded Decimal"
+/// i.e. decimal(49) => 0x49
 fn bin_to_bcd(x: u8) -> Result<u8, &'static str> {
     if x > 99 { Err("Invalid BCD") }
     else { Ok((x % 10) + ((x / 10) << 4)) }
 }
 
-/** Translates a "Binary Coded Decimal" to a binary integer
-    i.e. 0x49 => decimal(49) **/
+/// Translates a "Binary Coded Decimal" to a binary integer
+/// i.e. 0x49 => decimal(49)
 fn bcd_to_bin(x: u8) -> Result<u8, &'static str> {
     if x > 0x99 { Err("Invalid BCD") }
     else { Ok(10 * ((x & 0xF0) >> 4) + (x & 0x0F)) }
