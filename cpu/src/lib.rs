@@ -12,6 +12,7 @@ use memory::Memory;
 use crate::addressing_mode::AddressingMode;
 
 use std::ops;
+use crate::instruction::{Instruction, INSTRUCTIONS};
 
 pub const NMI_VEC: u16 = 0xFFFA;
 pub const RST_VEC: u16 = 0xFFFC;
@@ -32,7 +33,17 @@ pub struct CPU {
 
 impl CPU {
     fn tick(&mut self) {
+        if self.wait_cycles > 0 {
+            self.wait_cycles -= 1;
+            return;
+        }
 
+        let opcode = self.memory.read(self.pc);
+        self.pc += 1;
+        let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
+        self.wait_cycles = op.cycles;
+        self.execute_op(op.op_str, &op.mode);
+        self.pc += op.mode.operand_length();
     }
 
     fn stack_push(&mut self, data: u8) {
@@ -54,11 +65,53 @@ impl CPU {
         self.stack_pop() as u16 | ((self.stack_pop() as u16) << 8)
     }
 
-
-    fn get_operand_address(&self, mode: &AddressingMode) -> (u16, bool) {
-        // TODO: It would be nice to have a (separate?) function just to get data
-        // But it would also have to get page cross?
-        (0x0, false)
+    /// Return the address where data can be found
+    /// Branches (relative mode) returns
+    /// The boolean represents a page boundary cross
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
+        match mode {
+            AddressingMode::IMM => (self.pc, false),
+            AddressingMode::ABS => (self.memory.read_u16(self.pc), false),
+            AddressingMode::ZER => (self.memory.read(self.pc) as u16, false),
+            AddressingMode::ZEX => (self.memory.read(self.pc).wrapping_add(self.x) as u16, false),
+            AddressingMode::ZEY => (self.memory.read(self.pc).wrapping_add(self.y) as u16, false),
+            AddressingMode::ABX => {
+                let base = self.memory.read_u16(self.pc);
+                let addr = base.wrapping_add(self.x as u16);
+                (addr, pages_differ(base, addr))
+            },
+            AddressingMode::ABY => {
+                let base = self.memory.read_u16(self.pc);
+                let addr = base.wrapping_add(self.y as u16);
+                (addr, pages_differ(base, addr))
+            },
+            AddressingMode::REL => {
+                let offset = self.memory.read(self.pc) as i8;
+                let dest = self.pc.wrapping_add(1).wrapping_add(offset as u16);
+                (dest, pages_differ(self.pc.wrapping_add(1) & 0xFF00, dest & 0xFF00))
+            },
+            AddressingMode::INX => {
+                let index = self.memory.read(self.pc).wrapping_add(self.x);
+                let lo = self.memory.read(index as u16) as u16;
+                let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
+                ((hi << 8) | lo, false)
+            },
+            AddressingMode::INY => {
+                let index = self.memory.read(self.pc);
+                let lo = self.memory.read(index as u16) as u16;
+                let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
+                let addr_base = (hi << 8) | lo;
+                let addr = addr_base.wrapping_add(self.y as u16);
+                (addr, pages_differ(addr_base, addr))
+            },
+            AddressingMode::ABI => {
+                let addr = self.memory.read_u16(self.pc);
+                // 6502 indirect addressing bug at page boundaries
+                let hi = if addr & 0x00FF == 0x00FF { addr & 0xFF00 } else { addr + 1 };
+                ((hi as u16) << 8 | (self.memory.read(addr) as u16), false)
+            },
+            _ => panic!("cannot get operand address of mode {:?}", mode),
+        }
     }
 
     fn execute_op(&mut self, op_str: &str, mode: &AddressingMode) {
@@ -66,16 +119,16 @@ impl CPU {
             "ADC" => self.arithmetic_op(false, mode),
             "AND" => self.bit_op(ops::BitAnd::bitand, mode),
             "ASL" => self.shift_op(true, mode),
-            "BCC" => self.branch_op(StatusRegister::CARRY, false),
-            "BCS" => self.branch_op(StatusRegister::CARRY, true),
-            "BEQ" => self.branch_op(StatusRegister::ZERO, true),
+            "BCC" => self.branch_op(StatusRegister::CARRY, false, mode),
+            "BCS" => self.branch_op(StatusRegister::CARRY, true, mode),
+            "BEQ" => self.branch_op(StatusRegister::ZERO, true, mode),
             "BIT" => self.bit(mode),
-            "BMI" => self.branch_op(StatusRegister::NEGATIVE, true),
-            "BNE" => self.branch_op(StatusRegister::ZERO, false),
-            "BPL" => self.branch_op(StatusRegister::NEGATIVE, false),
+            "BMI" => self.branch_op(StatusRegister::NEGATIVE, true, mode),
+            "BNE" => self.branch_op(StatusRegister::ZERO, false, mode),
+            "BPL" => self.branch_op(StatusRegister::NEGATIVE, false, mode),
             "BRK" => self.brk(),
-            "BVC" => self.branch_op(StatusRegister::OVERFLOW, false),
-            "BVS" => self.branch_op(StatusRegister::OVERFLOW, true),
+            "BVC" => self.branch_op(StatusRegister::OVERFLOW, false, mode),
+            "BVS" => self.branch_op(StatusRegister::OVERFLOW, true, mode),
             "CLC" => self.p.remove(StatusRegister::CARRY),
             "CLD" => self.p.remove(StatusRegister::DECIMAL),
             "CLI" => self.p.remove(StatusRegister::IRQ_DISABLE),
@@ -133,12 +186,12 @@ impl CPU {
     }
 
     /// Branch if the given flag has the given value
-    fn branch_op(&mut self, flag: StatusRegister, value: bool) {
-        // TODO
-        // let (addr, _) = self.get_operand_address(mode);
-        // let data = self.memory.read(addr);
-        // if self.p.contains(flag) == value {
-        // }
+    fn branch_op(&mut self, flag: StatusRegister, value: bool, mode: &AddressingMode) {
+        if self.p.contains(flag) == value {
+            let (dest, page_cross) = self.get_operand_address(mode);
+            self.wait_cycles += if page_cross { 2 } else { 1 };
+            self.pc = dest;
+        }
     }
 
     /// Compare a register to memory, then set flags
@@ -168,7 +221,6 @@ impl CPU {
         self.p.set(StatusRegister::ZERO, new_val == 0);
         new_val
     }
-
 
     /// Load memory and return it to be put into a register
     fn load_op(&mut self, mode: &AddressingMode) -> u8 {
@@ -261,8 +313,8 @@ impl CPU {
     }
 
     fn jump_op(&mut self, save_return: bool, mode: &AddressingMode) {
-        if save_return { self.stack_push_u16(self.pc); } // TODO: Add or sub something?
-        // TODO: Set PC, perhaps using mode, but be careful between absolute and indirect
+        if save_return { self.stack_push_u16(self.pc - 1 + 2); } // 2 ahead of opcode
+        self.pc = self.get_operand_address(mode).0;
     }
 
     /// Test bits in memory with accumulator
@@ -311,4 +363,8 @@ fn bin_to_bcd(x: u8) -> Result<u8, &'static str> {
 fn bcd_to_bin(x: u8) -> Result<u8, &'static str> {
     if x > 0x99 { Err("Invalid BCD") }
     else { Ok(10 * ((x & 0xF0) >> 4) + (x & 0x0F)) }
+}
+
+fn pages_differ(addr1: u16, addr2: u16) -> bool {
+    addr1 & 0xFF00 != addr2 & 0xFF00
 }
