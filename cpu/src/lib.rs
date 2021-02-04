@@ -5,18 +5,21 @@ extern crate lazy_static;
 
 mod status_register;
 mod addressing_mode;
-pub mod instruction;
+mod instruction;
 
 use status_register::StatusRegister;
 use memory::Memory;
 use crate::addressing_mode::AddressingMode;
 
 use std::ops;
-use crate::instruction::{Instruction, INSTRUCTIONS};
+use crate::instruction::INSTRUCTIONS;
 
 pub const NMI_VEC: u16 = 0xFFFA;
 pub const RST_VEC: u16 = 0xFFFC;
 pub const IRQ_VEC: u16 = 0xFFFE;
+
+const STACK_BASE: u16 = 0x0100;
+const STACK_INIT: u8 = 0xfd;
 
 pub struct CPU {
     // Registers
@@ -27,38 +30,77 @@ pub struct CPU {
 
     pc: u16, // Program counter
     wait_cycles: u32,
+    cycles: usize,
 
     memory: Box<dyn Memory>,
 }
 
+impl Memory for CPU {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.memory.read(addr)
+    }
+
+    fn write(&mut self, addr: u16, data: u8) {
+        self.memory.write(addr, data);
+    }
+}
+
 impl CPU {
-    fn tick(&mut self) {
+    pub fn new(memory: Box<dyn Memory>) -> Self {
+        CPU {
+            a: 0, x: 0, y: 0, s: STACK_INIT,
+            p: StatusRegister::from_bits(0b100100).unwrap(),
+            pc: 0, wait_cycles: 0,
+            cycles: 0,
+            memory
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.s = STACK_INIT;
+        self.p = StatusRegister::from_bits(0).unwrap();
+        self.wait_cycles = 0;
+        self.cycles = 0;
+
+        self.pc = self.memory.read_u16(RST_VEC);
+    }
+
+    pub fn tick(&mut self) {
         if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
+            self.cycles += 1;
             return;
         }
 
         let opcode = self.memory.read(self.pc);
-        self.pc += 1;
         let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
+        self.pc += 1;
         self.wait_cycles = op.cycles;
+
+        let old_pc = self.pc;
         self.execute_op(op.op_str, &op.mode);
-        self.pc += op.mode.operand_length();
+        if self.pc == old_pc { // If not branch or jump
+            self.pc += op.mode.operand_length();
+        }
+        self.cycles += 1;
     }
 
     fn stack_push(&mut self, data: u8) {
-        self.memory.write(0x100 + (self.s as u16), data);
+        self.memory.write(STACK_BASE + (self.s as u16), data);
         self.s = self.s.wrapping_sub(1);
     }
 
     fn stack_push_u16(&mut self, data: u16) {
         self.stack_push((data >> 8) as u8);
-        self.stack_push(data as u8);
+        self.stack_push((data & 0xff) as u8);
     }
 
     fn stack_pop(&mut self) -> u8 {
         self.s = self.s.wrapping_add(1);
-        self.memory.read(0x100 + (self.s as u16))
+        self.memory.read(STACK_BASE + (self.s as u16))
     }
 
     fn stack_pop_u16(&mut self) -> u16 {
@@ -143,8 +185,8 @@ impl CPU {
             "INC" => self.step_op(1, mode),
             "INX" => self.x = self.step_reg_op(1, self.x),
             "INY" => self.y = self.step_reg_op(1, self.y),
-            "JMP" => self.jump_op(true, mode),
-            "JSR" => self.jump_op(false, mode),
+            "JMP" => self.jump_op(false, mode),
+            "JSR" => self.jump_op(true, mode),
             "LDA" => self.a = self.load_op(mode),
             "LDX" => self.x = self.load_op(mode),
             "LDY" => self.y = self.load_op(mode),
@@ -158,7 +200,7 @@ impl CPU {
             "ROL" => self.rotate_op(true, mode),
             "ROR" => self.rotate_op(false, mode),
             "RTI" => self.rti(),
-            "RTS" => self.pc = self.stack_pop_u16(), // TODO: Add or sub something?
+            "RTS" => self.pc = self.stack_pop_u16() + 1, // TODO: Add or sub something?
             "SBC" => self.arithmetic_op(true, mode),
             "SEC" => self.p.insert(StatusRegister::CARRY),
             "SED" => self.p.insert(StatusRegister::DECIMAL),
@@ -275,7 +317,8 @@ impl CPU {
 
     /// Perform a left or right shift, setting flags
     fn shift_op(&mut self, left: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, _) =
+            if *mode == AddressingMode::ACC { (0, false) } else { self.get_operand_address(mode) };
         let mut data =
             if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
 
@@ -293,7 +336,8 @@ impl CPU {
 
     /// Perform a left or right rotate, setting flags
     fn rotate_op(&mut self, left: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, _) =
+            if *mode == AddressingMode::ACC { (0, false) } else { self.get_operand_address(mode) };
         let mut data =
             if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
 
