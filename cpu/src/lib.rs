@@ -113,34 +113,35 @@ impl CPU {
     /// Branches (relative mode) returns
     /// The boolean represents a page boundary cross
     fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
+        use AddressingMode::*;
         match mode {
-            AddressingMode::IMM => (self.pc, false),
-            AddressingMode::ABS => (self.memory.read_u16(self.pc), false),
-            AddressingMode::ZER => (self.memory.read(self.pc) as u16, false),
-            AddressingMode::ZEX => (self.memory.read(self.pc).wrapping_add(self.x) as u16, false),
-            AddressingMode::ZEY => (self.memory.read(self.pc).wrapping_add(self.y) as u16, false),
-            AddressingMode::ABX => {
+            IMM => (self.pc, false),
+            ABS => (self.memory.read_u16(self.pc), false),
+            ZER => (self.memory.read(self.pc) as u16, false),
+            ZEX => (self.memory.read(self.pc).wrapping_add(self.x) as u16, false),
+            ZEY => (self.memory.read(self.pc).wrapping_add(self.y) as u16, false),
+            ABX => {
                 let base = self.memory.read_u16(self.pc);
                 let addr = base.wrapping_add(self.x as u16);
                 (addr, pages_differ(base, addr))
             },
-            AddressingMode::ABY => {
+            ABY => {
                 let base = self.memory.read_u16(self.pc);
                 let addr = base.wrapping_add(self.y as u16);
                 (addr, pages_differ(base, addr))
             },
-            AddressingMode::REL => {
+            REL => {
                 let offset = self.memory.read(self.pc) as i8;
                 let dest = self.pc.wrapping_add(1).wrapping_add(offset as u16);
                 (dest, pages_differ(self.pc.wrapping_add(1) & 0xFF00, dest & 0xFF00))
             },
-            AddressingMode::INX => {
+            INX => {
                 let index = self.memory.read(self.pc).wrapping_add(self.x);
                 let lo = self.memory.read(index as u16) as u16;
                 let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
                 ((hi << 8) | lo, false)
             },
-            AddressingMode::INY => {
+            INY => {
                 let index = self.memory.read(self.pc);
                 let lo = self.memory.read(index as u16) as u16;
                 let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
@@ -148,7 +149,7 @@ impl CPU {
                 let addr = addr_base.wrapping_add(self.y as u16);
                 (addr, pages_differ(addr_base, addr))
             },
-            AddressingMode::ABI => {
+            ABI => {
                 let addr = self.memory.read_u16(self.pc);
                 // 6502 indirect addressing bug at page boundaries
                 let hi = if addr & 0x00FF == 0x00FF { addr & 0xFF00 } else { addr + 1 };
@@ -216,6 +217,17 @@ impl CPU {
             "TXA" => self.a = self.transfer_op(self.x, false),
             "TXS" => self.s = self.transfer_op(self.x, true),
             "TYA" => self.a = self.transfer_op(self.y, false),
+
+            // https://wiki.nesdev.com/w/index.php/Programming_with_unofficial_opcodes
+            "ALR" => self.combined_op(vec![0x29, 0x4A]),
+            "ANC" => self.anc(),
+            "ARR" => self.arr(&mode),
+            "AXS" => self.axs(&mode),
+            "LAX" => { self.execute_op("LDA", mode); self.execute_op("TAX", mode); },
+            "SAX" => {
+                let addr = self.get_operand_address(mode).0;
+                self.memory.write(addr, self.a & self.x);
+            },
             _ => {},
         };
     }
@@ -366,6 +378,13 @@ impl CPU {
         self.pc = self.get_operand_address(mode).0;
     }
 
+    fn combined_op(&mut self, opcodes: Vec<u8>) {
+        for opcode in opcodes {
+            let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
+            self.execute_op(op.op_str, &op.mode);
+        }
+    }
+
     /// Test bits in memory with accumulator
     /// 2 most significant bits are transferred from data to P [Flags N and V]
     /// Then Flag Z is set according to data & A
@@ -397,6 +416,38 @@ impl CPU {
         let val = self.stack_pop();
         self.p.set_from_stack(val);
         self.pc = self.stack_pop_u16();
+    }
+
+    /// Unofficial: Execute AND imm, setting flags slightly differently
+    fn anc(&mut self) {
+        self.execute_op("AND", &AddressingMode::IMM);
+        self.p.set(StatusRegister::CARRY, self.p.contains(StatusRegister::NEGATIVE));
+    }
+
+    /// Unofficial: Like AND followed by ROR, but setting flags in a different way to ROR
+    fn arr(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        self.a &= data;
+        self.execute_op("ROR", &AddressingMode::ACC);
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
+
+        let bit_5 = (self.a & (1 << 4)) != 0;
+        let bit_6 = (self.a & (1 << 5)) != 0;
+        self.p.set(StatusRegister::CARRY, bit_6);
+        self.p.set(StatusRegister::OVERFLOW, bit_5 ^ bit_6);
+    }
+
+    /// Unofficial: Set X = (A & X) - operand, setting flags
+    fn axs(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        let a_and_x = self.a & self.x;
+        self.x = a_and_x.wrapping_sub(data);
+        self.p.set(StatusRegister::CARRY, data <= a_and_x);
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
     }
 }
 
