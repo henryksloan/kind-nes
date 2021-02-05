@@ -71,10 +71,13 @@ impl CPU {
     pub fn tick(&mut self) {
         if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
-            self.cycles += 1;
-            return;
+        } else {
+            self.step();
         }
+        self.cycles += 1;
+    }
 
+    pub fn step(&mut self) {
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
         self.pc += 1;
@@ -85,7 +88,6 @@ impl CPU {
         if self.pc == old_pc { // If not branch or jump
             self.pc += op.mode.operand_length();
         }
-        self.cycles += 1;
     }
 
     fn stack_push(&mut self, data: u8) {
@@ -220,11 +222,12 @@ impl CPU {
 
     /// Perform a binary logic operation (e.g. AND) between A and memory
     fn bit_op(&mut self, f: impl Fn(u8, u8) -> u8, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.a = f(self.a, data);
         self.p.set(StatusRegister::ZERO, self.a == 0);
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        if page_cross { self.wait_cycles += 1; }
     }
 
     /// Branch if the given flag has the given value
@@ -266,10 +269,11 @@ impl CPU {
 
     /// Load memory and return it to be put into a register
     fn load_op(&mut self, mode: &AddressingMode) -> u8 {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, data == 0);
+        if page_cross { self.wait_cycles += 1; }
         data
     }
 
@@ -291,7 +295,7 @@ impl CPU {
 
     /// Add/subtract data to/from A and set flags, possibly using decimal mode
     fn arithmetic_op(&mut self, subtract: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let mut data = self.memory.read(addr);
         if subtract {
             data = ((data as i8).wrapping_neg().wrapping_sub(1)) as u8
@@ -313,6 +317,7 @@ impl CPU {
         self.a = (sum & 0xFF) as u8;
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.a == 0);
+        if page_cross { self.wait_cycles += 1; }
     }
 
     /// Perform a left or right shift, setting flags
