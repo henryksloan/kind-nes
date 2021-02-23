@@ -203,7 +203,7 @@ impl CPU {
             "ROL" => self.rotate_op(true, mode),
             "ROR" => self.rotate_op(false, mode),
             "RTI" => self.rti(),
-            "RTS" => self.pc = self.stack_pop_u16() + 1, // TODO: Add or sub something?
+            "RTS" => self.pc = self.stack_pop_u16() + 1,
             "SBC" => self.arithmetic_op(true, mode),
             "SEC" => self.p.insert(StatusRegister::CARRY),
             "SED" => self.p.insert(StatusRegister::DECIMAL),
@@ -219,6 +219,7 @@ impl CPU {
             "TYA" => self.a = self.transfer_op(self.y, false),
 
             // https://wiki.nesdev.com/w/index.php/Programming_with_unofficial_opcodes
+            // Combined instructions:
             "ALR" => self.combined_op(vec![0x29, 0x4A]),
             "ANC" => self.anc(),
             "ARR" => self.arr(&mode),
@@ -228,6 +229,14 @@ impl CPU {
                 let addr = self.get_operand_address(mode).0;
                 self.memory.write(addr, self.a & self.x);
             },
+
+            // RMW instructions
+            "DCP" => { self.execute_op("DEC", mode); self.execute_op("CMP", mode); },
+            "ISC" => { self.execute_op("INC", mode); self.execute_op("SBC", mode); },
+            "RLA" => { self.execute_op("ROL", mode); self.execute_op("AND", mode); },
+            "RRA" => { self.execute_op("ROR", mode); self.execute_op("ADC", mode); },
+            "SLO" => { self.execute_op("ASL", mode); self.execute_op("ORA", mode); },
+            "SRE" => { self.execute_op("LSR", mode); self.execute_op("EOR", mode); },
             _ => {},
         };
     }
