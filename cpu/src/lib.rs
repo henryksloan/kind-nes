@@ -5,18 +5,21 @@ extern crate lazy_static;
 
 mod status_register;
 mod addressing_mode;
-pub mod instruction;
+mod instruction;
 
 use status_register::StatusRegister;
 use memory::Memory;
 use crate::addressing_mode::AddressingMode;
 
 use std::ops;
-use crate::instruction::{Instruction, INSTRUCTIONS};
+use crate::instruction::INSTRUCTIONS;
 
 pub const NMI_VEC: u16 = 0xFFFA;
 pub const RST_VEC: u16 = 0xFFFC;
 pub const IRQ_VEC: u16 = 0xFFFE;
+
+const STACK_BASE: u16 = 0x0100;
+const STACK_INIT: u8 = 0xfd;
 
 pub struct CPU {
     // Registers
@@ -27,38 +30,79 @@ pub struct CPU {
 
     pc: u16, // Program counter
     wait_cycles: u32,
+    cycles: usize,
 
     memory: Box<dyn Memory>,
 }
 
+impl Memory for CPU {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.memory.read(addr)
+    }
+
+    fn write(&mut self, addr: u16, data: u8) {
+        self.memory.write(addr, data);
+    }
+}
+
 impl CPU {
-    fn tick(&mut self) {
+    pub fn new(memory: Box<dyn Memory>) -> Self {
+        CPU {
+            a: 0, x: 0, y: 0, s: STACK_INIT,
+            p: StatusRegister::from_bits(0b100100).unwrap(),
+            pc: 0, wait_cycles: 0,
+            cycles: 0,
+            memory
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.s = STACK_INIT;
+        self.p = StatusRegister::from_bits(0).unwrap();
+        self.wait_cycles = 0;
+        self.cycles = 0;
+
+        self.pc = self.memory.read_u16(RST_VEC);
+    }
+
+    pub fn tick(&mut self) {
         if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
-            return;
+        } else {
+            self.step();
         }
+        self.cycles += 1;
+    }
 
+    pub fn step(&mut self) {
         let opcode = self.memory.read(self.pc);
-        self.pc += 1;
         let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
+        self.pc += 1;
         self.wait_cycles = op.cycles;
+
+        let old_pc = self.pc;
         self.execute_op(op.op_str, &op.mode);
-        self.pc += op.mode.operand_length();
+        if self.pc == old_pc { // If not branch or jump
+            self.pc += op.mode.operand_length();
+        }
     }
 
     fn stack_push(&mut self, data: u8) {
-        self.memory.write(0x100 + (self.s as u16), data);
+        self.memory.write(STACK_BASE + (self.s as u16), data);
         self.s = self.s.wrapping_sub(1);
     }
 
     fn stack_push_u16(&mut self, data: u16) {
         self.stack_push((data >> 8) as u8);
-        self.stack_push(data as u8);
+        self.stack_push((data & 0xff) as u8);
     }
 
     fn stack_pop(&mut self) -> u8 {
         self.s = self.s.wrapping_add(1);
-        self.memory.read(0x100 + (self.s as u16))
+        self.memory.read(STACK_BASE + (self.s as u16))
     }
 
     fn stack_pop_u16(&mut self) -> u16 {
@@ -69,34 +113,35 @@ impl CPU {
     /// Branches (relative mode) returns
     /// The boolean represents a page boundary cross
     fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
+        use AddressingMode::*;
         match mode {
-            AddressingMode::IMM => (self.pc, false),
-            AddressingMode::ABS => (self.memory.read_u16(self.pc), false),
-            AddressingMode::ZER => (self.memory.read(self.pc) as u16, false),
-            AddressingMode::ZEX => (self.memory.read(self.pc).wrapping_add(self.x) as u16, false),
-            AddressingMode::ZEY => (self.memory.read(self.pc).wrapping_add(self.y) as u16, false),
-            AddressingMode::ABX => {
+            IMM => (self.pc, false),
+            ABS => (self.memory.read_u16(self.pc), false),
+            ZER => (self.memory.read(self.pc) as u16, false),
+            ZEX => (self.memory.read(self.pc).wrapping_add(self.x) as u16, false),
+            ZEY => (self.memory.read(self.pc).wrapping_add(self.y) as u16, false),
+            ABX => {
                 let base = self.memory.read_u16(self.pc);
                 let addr = base.wrapping_add(self.x as u16);
                 (addr, pages_differ(base, addr))
             },
-            AddressingMode::ABY => {
+            ABY => {
                 let base = self.memory.read_u16(self.pc);
                 let addr = base.wrapping_add(self.y as u16);
                 (addr, pages_differ(base, addr))
             },
-            AddressingMode::REL => {
+            REL => {
                 let offset = self.memory.read(self.pc) as i8;
                 let dest = self.pc.wrapping_add(1).wrapping_add(offset as u16);
                 (dest, pages_differ(self.pc.wrapping_add(1) & 0xFF00, dest & 0xFF00))
             },
-            AddressingMode::INX => {
+            INX => {
                 let index = self.memory.read(self.pc).wrapping_add(self.x);
                 let lo = self.memory.read(index as u16) as u16;
                 let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
                 ((hi << 8) | lo, false)
             },
-            AddressingMode::INY => {
+            INY => {
                 let index = self.memory.read(self.pc);
                 let lo = self.memory.read(index as u16) as u16;
                 let hi = self.memory.read(index.wrapping_add(1) as u16) as u16;
@@ -104,7 +149,7 @@ impl CPU {
                 let addr = addr_base.wrapping_add(self.y as u16);
                 (addr, pages_differ(addr_base, addr))
             },
-            AddressingMode::ABI => {
+            ABI => {
                 let addr = self.memory.read_u16(self.pc);
                 // 6502 indirect addressing bug at page boundaries
                 let hi = if addr & 0x00FF == 0x00FF { addr & 0xFF00 } else { addr + 1 };
@@ -143,8 +188,8 @@ impl CPU {
             "INC" => self.step_op(1, mode),
             "INX" => self.x = self.step_reg_op(1, self.x),
             "INY" => self.y = self.step_reg_op(1, self.y),
-            "JMP" => self.jump_op(true, mode),
-            "JSR" => self.jump_op(false, mode),
+            "JMP" => self.jump_op(false, mode),
+            "JSR" => self.jump_op(true, mode),
             "LDA" => self.a = self.load_op(mode),
             "LDX" => self.x = self.load_op(mode),
             "LDY" => self.y = self.load_op(mode),
@@ -158,7 +203,7 @@ impl CPU {
             "ROL" => self.rotate_op(true, mode),
             "ROR" => self.rotate_op(false, mode),
             "RTI" => self.rti(),
-            "RTS" => self.pc = self.stack_pop_u16(), // TODO: Add or sub something?
+            "RTS" => self.pc = self.stack_pop_u16() + 1,
             "SBC" => self.arithmetic_op(true, mode),
             "SEC" => self.p.insert(StatusRegister::CARRY),
             "SED" => self.p.insert(StatusRegister::DECIMAL),
@@ -172,17 +217,38 @@ impl CPU {
             "TXA" => self.a = self.transfer_op(self.x, false),
             "TXS" => self.s = self.transfer_op(self.x, true),
             "TYA" => self.a = self.transfer_op(self.y, false),
+
+            // https://wiki.nesdev.com/w/index.php/Programming_with_unofficial_opcodes
+            // Combined instructions:
+            "ALR" => self.combined_op(vec![0x29, 0x4A]),
+            "ANC" => self.anc(),
+            "ARR" => self.arr(&mode),
+            "AXS" => self.axs(&mode),
+            "LAX" => { self.execute_op("LDA", mode); self.execute_op("TAX", mode); },
+            "SAX" => {
+                let addr = self.get_operand_address(mode).0;
+                self.memory.write(addr, self.a & self.x);
+            },
+
+            // RMW instructions
+            "DCP" => { self.execute_op("DEC", mode); self.execute_op("CMP", mode); },
+            "ISC" => { self.execute_op("INC", mode); self.execute_op("SBC", mode); },
+            "RLA" => { self.execute_op("ROL", mode); self.execute_op("AND", mode); },
+            "RRA" => { self.execute_op("ROR", mode); self.execute_op("ADC", mode); },
+            "SLO" => { self.execute_op("ASL", mode); self.execute_op("ORA", mode); },
+            "SRE" => { self.execute_op("LSR", mode); self.execute_op("EOR", mode); },
             _ => {},
         };
     }
 
     /// Perform a binary logic operation (e.g. AND) between A and memory
     fn bit_op(&mut self, f: impl Fn(u8, u8) -> u8, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.a = f(self.a, data);
         self.p.set(StatusRegister::ZERO, self.a == 0);
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        if page_cross { self.wait_cycles += 1; }
     }
 
     /// Branch if the given flag has the given value
@@ -224,10 +290,11 @@ impl CPU {
 
     /// Load memory and return it to be put into a register
     fn load_op(&mut self, mode: &AddressingMode) -> u8 {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         self.p.set(StatusRegister::NEGATIVE, (data & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, data == 0);
+        if page_cross { self.wait_cycles += 1; }
         data
     }
 
@@ -249,7 +316,7 @@ impl CPU {
 
     /// Add/subtract data to/from A and set flags, possibly using decimal mode
     fn arithmetic_op(&mut self, subtract: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let mut data = self.memory.read(addr);
         if subtract {
             data = ((data as i8).wrapping_neg().wrapping_sub(1)) as u8
@@ -271,11 +338,13 @@ impl CPU {
         self.a = (sum & 0xFF) as u8;
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.a == 0);
+        if page_cross { self.wait_cycles += 1; }
     }
 
     /// Perform a left or right shift, setting flags
     fn shift_op(&mut self, left: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, _) =
+            if *mode == AddressingMode::ACC { (0, false) } else { self.get_operand_address(mode) };
         let mut data =
             if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
 
@@ -293,7 +362,8 @@ impl CPU {
 
     /// Perform a left or right rotate, setting flags
     fn rotate_op(&mut self, left: bool, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, _) =
+            if *mode == AddressingMode::ACC { (0, false) } else { self.get_operand_address(mode) };
         let mut data =
             if *mode == AddressingMode::ACC { self.a } else { self.memory.read(addr) };
 
@@ -315,6 +385,13 @@ impl CPU {
     fn jump_op(&mut self, save_return: bool, mode: &AddressingMode) {
         if save_return { self.stack_push_u16(self.pc - 1 + 2); } // 2 ahead of opcode
         self.pc = self.get_operand_address(mode).0;
+    }
+
+    fn combined_op(&mut self, opcodes: Vec<u8>) {
+        for opcode in opcodes {
+            let op = INSTRUCTIONS.get(&opcode).expect("Unimplemented instruction");
+            self.execute_op(op.op_str, &op.mode);
+        }
     }
 
     /// Test bits in memory with accumulator
@@ -348,6 +425,38 @@ impl CPU {
         let val = self.stack_pop();
         self.p.set_from_stack(val);
         self.pc = self.stack_pop_u16();
+    }
+
+    /// Unofficial: Execute AND imm, setting flags slightly differently
+    fn anc(&mut self) {
+        self.execute_op("AND", &AddressingMode::IMM);
+        self.p.set(StatusRegister::CARRY, self.p.contains(StatusRegister::NEGATIVE));
+    }
+
+    /// Unofficial: Like AND followed by ROR, but setting flags in a different way to ROR
+    fn arr(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        self.a &= data;
+        self.execute_op("ROR", &AddressingMode::ACC);
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
+
+        let bit_5 = (self.a & (1 << 4)) != 0;
+        let bit_6 = (self.a & (1 << 5)) != 0;
+        self.p.set(StatusRegister::CARRY, bit_6);
+        self.p.set(StatusRegister::OVERFLOW, bit_5 ^ bit_6);
+    }
+
+    /// Unofficial: Set X = (A & X) - operand, setting flags
+    fn axs(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        let a_and_x = self.a & self.x;
+        self.x = a_and_x.wrapping_sub(data);
+        self.p.set(StatusRegister::CARRY, data <= a_and_x);
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
     }
 }
 
