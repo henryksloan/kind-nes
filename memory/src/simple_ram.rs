@@ -6,7 +6,9 @@ pub struct SimpleRAM {
 
 impl SimpleRAM {
     pub fn new() -> Self {
-        SimpleRAM { memory: [0; 0xFFFF] }
+        SimpleRAM {
+            memory: [0; 0xFFFF],
+        }
     }
 }
 

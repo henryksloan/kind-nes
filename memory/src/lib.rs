@@ -2,7 +2,9 @@ pub mod simple_ram;
 
 pub trait Memory {
     fn read(&mut self, addr: u16) -> u8;
-    fn peek(&mut self, addr: u16) -> u8 { self.read(addr) }
+    fn peek(&mut self, addr: u16) -> u8 {
+        self.read(addr)
+    }
     fn write(&mut self, addr: u16, data: u8);
 
     fn read_u16(&mut self, addr: u16) -> u16 {
