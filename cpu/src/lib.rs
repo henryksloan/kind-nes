@@ -65,21 +65,22 @@ impl CPU {
         self.pc = self.memory.read_u16(RST_VEC);
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> Option<String> {
         if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
             self.cycles += 1;
+            None
         } else {
-            self.step();
+            Some(self.step())
         }
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> String {
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
-        println!("{}", self.format_step(op));
+        let log = self.format_step(op);
         self.pc += 1;
 
         self.wait_cycles = 0;
@@ -90,6 +91,8 @@ impl CPU {
             self.pc += op.mode.operand_length();
         }
         self.wait_cycles += op.cycles;
+
+        log
     }
 
     fn format_step(&self, op: &Instruction) -> String {
@@ -127,7 +130,7 @@ impl CPU {
 
     fn format_state(&self) -> String {
         format!(
-            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{} ",
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
             self.a, self.x, self.y, self.p, self.s, self.cycles
         )
     }
