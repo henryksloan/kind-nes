@@ -11,7 +11,7 @@ use crate::addressing_mode::AddressingMode;
 use memory::Memory;
 use status_register::StatusRegister;
 
-use crate::instruction::INSTRUCTIONS;
+use crate::instruction::{Instruction, INSTRUCTIONS};
 use std::ops;
 
 pub const NMI_VEC: u16 = 0xFFFA;
@@ -21,11 +21,13 @@ pub const IRQ_VEC: u16 = 0xFFFE;
 const STACK_BASE: u16 = 0x0100;
 const STACK_INIT: u8 = 0xfd;
 
+const DECIMAL_ENABLED: bool = false;
+
 pub struct CPU {
     // Registers
     a: u8, // Accumulator
     x: u8,
-    pub y: u8, // Index registers
+    y: u8, // Index registers
     p: StatusRegister,
     s: u8, // Stack pointer
 
@@ -36,16 +38,6 @@ pub struct CPU {
     memory: Box<dyn Memory>,
 }
 
-impl Memory for CPU {
-    fn read(&mut self, addr: u16) -> u8 {
-        self.memory.read(addr)
-    }
-
-    fn write(&mut self, addr: u16, data: u8) {
-        self.memory.write(addr, data);
-    }
-}
-
 impl CPU {
     pub fn new(memory: Box<dyn Memory>) -> Self {
         CPU {
@@ -53,7 +45,7 @@ impl CPU {
             x: 0,
             y: 0,
             s: STACK_INIT,
-            p: StatusRegister::from_bits(0b100100).unwrap(),
+            p: StatusRegister::from_bits(0b0100100).unwrap(),
             pc: 0,
             wait_cycles: 0,
             cycles: 0,
@@ -66,9 +58,9 @@ impl CPU {
         self.x = 0;
         self.y = 0;
         self.s = STACK_INIT;
-        self.p = StatusRegister::from_bits(0).unwrap();
+        self.p = StatusRegister::from_bits(0b0100100).unwrap();
         self.wait_cycles = 0;
-        self.cycles = 0;
+        self.cycles = 7;
 
         self.pc = self.memory.read_u16(RST_VEC);
     }
@@ -76,10 +68,10 @@ impl CPU {
     pub fn tick(&mut self) {
         if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
+            self.cycles += 1;
         } else {
             self.step();
         }
-        self.cycles += 1;
     }
 
     pub fn step(&mut self) {
@@ -87,15 +79,57 @@ impl CPU {
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
+        println!("{}", self.format_step(op));
         self.pc += 1;
-        self.wait_cycles = op.cycles;
 
+        self.wait_cycles = 0;
         let old_pc = self.pc;
         self.execute_op(op.op_str, &op.mode);
         if self.pc == old_pc {
             // If not branch or jump
             self.pc += op.mode.operand_length();
         }
+        self.wait_cycles += op.cycles;
+    }
+
+    fn format_step(&self, op: &Instruction) -> String {
+        format!("{:<48}{}", self.format_instr(op), self.format_state())
+    }
+
+    fn format_instr(&self, op: &Instruction) -> String {
+        format!(
+            "{:04X}  {:02X} {} {} {:>4} {}{}",
+            self.pc,
+            self.memory.peek(self.pc),
+            if op.mode.operand_length() > 0 {
+                format!("{:02X}", self.memory.peek(self.pc + 1))
+            } else {
+                "  ".to_string()
+            },
+            if op.mode.operand_length() > 1 {
+                format!("{:02X}", self.memory.peek(self.pc + 2))
+            } else {
+                "  ".to_string()
+            },
+            op.op_str,
+            op.mode.format(
+                self.pc,
+                match op.mode.operand_length() {
+                    1 => self.memory.peek(self.pc + 1) as u16,
+                    2 => self.memory.peek_u16(self.pc + 1),
+                    _ => 0x0,
+                }
+            ),
+            op.mode
+                .format_data(self.pc, self.x, self.y, self.memory.as_ref())
+        )
+    }
+
+    fn format_state(&self) -> String {
+        format!(
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{} ",
+            self.a, self.x, self.y, self.p, self.s, self.cycles
+        )
     }
 
     fn stack_push(&mut self, data: u8) {
@@ -163,11 +197,11 @@ impl CPU {
             ABI => {
                 let addr = self.memory.read_u16(self.pc);
                 // 6502 indirect addressing bug at page boundaries
-                let hi = if addr & 0x00FF == 0x00FF {
+                let hi = self.memory.read(if addr & 0x00FF == 0x00FF {
                     addr & 0xFF00
                 } else {
-                    addr + 1
-                };
+                    addr.wrapping_add(1)
+                });
                 ((hi as u16) << 8 | (self.memory.read(addr) as u16), false)
             }
             _ => panic!("cannot get operand address of mode {:?}", mode),
@@ -212,7 +246,7 @@ impl CPU {
             "NOP" => {}
             "ORA" => self.bit_op(ops::BitOr::bitor, mode),
             "PHA" => self.stack_push(self.a),
-            "PHP" => self.stack_push(self.p.bits()),
+            "PHP" => self.stack_push(self.p.bits() | 0b00110000),
             "PLA" => self.pla(),
             "PLP" => {
                 let val = self.stack_pop();
@@ -222,7 +256,7 @@ impl CPU {
             "ROR" => self.rotate_op(false, mode),
             "RTI" => self.rti(),
             "RTS" => self.pc = self.stack_pop_u16() + 1,
-            "SBC" => self.arithmetic_op(true, mode),
+            "SBC" | "*SBC" => self.arithmetic_op(true, mode),
             "SEC" => self.p.insert(StatusRegister::CARRY),
             "SED" => self.p.insert(StatusRegister::DECIMAL),
             "SEI" => self.p.insert(StatusRegister::IRQ_DISABLE),
@@ -238,44 +272,28 @@ impl CPU {
 
             // https://wiki.nesdev.com/w/index.php/Programming_with_unofficial_opcodes
             // Combined instructions:
-            "ALR" => self.combined_op(vec![0x29, 0x4A]),
-            "ANC" => self.anc(),
-            "ARR" => self.arr(&mode),
-            "AXS" => self.axs(&mode),
-            "LAX" => {
-                self.execute_op("LDA", mode);
-                self.execute_op("TAX", mode);
+            "*NOP" => {
+                if self.memory.peek(self.pc - 1) & 0xF == 0xC && self.get_operand_address(mode).1 {
+                    self.wait_cycles += 1;
+                }
             }
-            "SAX" => {
+            "*ALR" => self.combined_op(vec![0x29, 0x4A]),
+            "*ANC" => self.anc(),
+            "*ARR" => self.arr(&mode),
+            "*AXS" => self.axs(&mode),
+            "*LAX" => self.combined_op_str(vec!["LDA", "TAX"], mode, true),
+            "*SAX" => {
                 let addr = self.get_operand_address(mode).0;
                 self.memory.write(addr, self.a & self.x);
             }
 
             // RMW instructions
-            "DCP" => {
-                self.execute_op("DEC", mode);
-                self.execute_op("CMP", mode);
-            }
-            "ISC" => {
-                self.execute_op("INC", mode);
-                self.execute_op("SBC", mode);
-            }
-            "RLA" => {
-                self.execute_op("ROL", mode);
-                self.execute_op("AND", mode);
-            }
-            "RRA" => {
-                self.execute_op("ROR", mode);
-                self.execute_op("ADC", mode);
-            }
-            "SLO" => {
-                self.execute_op("ASL", mode);
-                self.execute_op("ORA", mode);
-            }
-            "SRE" => {
-                self.execute_op("LSR", mode);
-                self.execute_op("EOR", mode);
-            }
+            "*DCP" => self.combined_op_str(vec!["DEC", "CMP"], mode, false),
+            "*ISB" => self.combined_op_str(vec!["INC", "SBC"], mode, false),
+            "*RLA" => self.combined_op_str(vec!["ROL", "AND"], mode, false),
+            "*RRA" => self.combined_op_str(vec!["ROR", "ADC"], mode, false),
+            "*SLO" => self.combined_op_str(vec!["ASL", "ORA"], mode, false),
+            "*SRE" => self.combined_op_str(vec!["LSR", "EOR"], mode, false),
             _ => {}
         };
     }
@@ -374,7 +392,7 @@ impl CPU {
         }
 
         let carry = self.p.contains(StatusRegister::CARRY);
-        let sum = if self.p.contains(StatusRegister::DECIMAL) {
+        let sum = if DECIMAL_ENABLED && self.p.contains(StatusRegister::DECIMAL) {
             let temp = bcd_to_bin(self.a).unwrap() + bcd_to_bin(data).unwrap() + carry as u8;
             self.p.set(StatusRegister::CARRY, temp > 99);
             bin_to_bcd(temp % 100).unwrap()
@@ -474,6 +492,16 @@ impl CPU {
                 .get(&opcode)
                 .expect("Unimplemented instruction");
             self.execute_op(op.op_str, &op.mode);
+        }
+    }
+
+    fn combined_op_str(&mut self, op_strs: Vec<&str>, mode: &AddressingMode, page_cycle: bool) {
+        for op_str in op_strs {
+            self.execute_op(op_str, mode);
+        }
+        if !page_cycle {
+            // Sometimes ignore page cross
+            self.wait_cycles = 0;
         }
     }
 

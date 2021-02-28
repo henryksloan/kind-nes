@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "sdl-ui",
     "nes",
     "cpu",
     "memory",

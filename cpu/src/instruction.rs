@@ -61,16 +61,16 @@ lazy_static! {
         add("NOP", vec![(0xEA, IMP, 2)]);
         add("ORA", vec![(0x09, IMM, 2), (0x05, ZER, 3), (0x15, ZEX, 4), (0x0D, ABS, 4),
                         (0x1D, ABX, 4), (0x19, ABY, 4), (0x01, INX, 6), (0x11, INY, 5)]);
-        add("PHA", vec![(0x48, IMP, 2)]);
-        add("PHP", vec![(0x08, IMP, 2)]);
-        add("PLA", vec![(0x68, IMP, 2)]);
-        add("PLP", vec![(0x28, IMP, 2)]);
+        add("PHA", vec![(0x48, IMP, 3)]);
+        add("PHP", vec![(0x08, IMP, 3)]);
+        add("PLA", vec![(0x68, IMP, 4)]);
+        add("PLP", vec![(0x28, IMP, 4)]);
         add("ROL", vec![(0x2A, ACC, 2), (0x26, ZER, 5), (0x36, ZEX, 6),
                         (0x2E, ABS, 6), (0x3E, ABX, 7)]);
         add("ROR", vec![(0x6A, ACC, 2), (0x66, ZER, 5), (0x76, ZEX, 6),
                         (0x6E, ABS, 6), (0x7E, ABX, 7)]);
-        add("RTI", vec![(0x40, IMP, 2)]);
-        add("RTS", vec![(0x60, IMP, 2)]);
+        add("RTI", vec![(0x40, IMP, 6)]);
+        add("RTS", vec![(0x60, IMP, 6)]);
         add("SBC", vec![(0xE9, IMM, 2), (0xE5, ZER, 3), (0xF5, ZEX, 4), (0xED, ABS, 4),
                         (0xFD, ABX, 4), (0xF9, ABY, 4), (0xE1, INX, 6), (0xF1, INY, 5)]);
         add("SEC", vec![(0x38, IMP, 2)]);
@@ -88,11 +88,10 @@ lazy_static! {
         add("TYA", vec![(0x98, IMP, 2)]);
 
         // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
-        add("NOP", vec![(0x80, IMM, 2),
+        add("*NOP", vec![(0x80, IMM, 2),
                         (0x82, IMM, 2), (0xC2, IMM, 2), (0xE2, IMM, 2),
                         (0x04, ZER, 3), (0x44, ZER, 3), (0x64, ZER, 3),
                         (0x89, IMM, 2),
-                        (0xEA, IMP, 2),
                         (0x0C, ABS, 4),
                         (0x14, ZEX, 4), (0x34, ZEX, 4), (0x54, ZEX, 4),
                         (0x74, ZEX, 4), (0xD4, ZEX, 4), (0xF4, ZEX, 4),
@@ -100,32 +99,32 @@ lazy_static! {
                         (0x7A, IMP, 2), (0xDA, IMP, 2), (0xFA, IMP, 2),
                         (0x1C, ABX, 4), (0x3C, ABX, 4), (0x5C, ABX, 4),
                         (0x7C, ABX, 4), (0xDC, ABX, 4), (0xFC, ABX, 4)]);
-        add("STP", vec![(0x02, IMM, 2), (0x22, IMM, 2), (0x42, IMM, 2), (0x62, IMM, 2),
+        add("*STP", vec![(0x02, IMM, 2), (0x22, IMM, 2), (0x42, IMM, 2), (0x62, IMM, 2),
                         (0x12, ZEX, 2), (0x32, ZEX, 2), (0x52, ZEX, 2), (0x72, ZEX, 2),
                         (0xD2, ZEX, 2), (0xF2, ZEX, 2)]);
-        add("SLO", vec![(0x03, INX, 8), (0x07, ZER, 5), (0x0F, ABS, 6), (0x13, INY, 8),
+        add("*SLO", vec![(0x03, INX, 8), (0x07, ZER, 5), (0x0F, ABS, 6), (0x13, INY, 8),
                         (0x17, ZEX, 6), (0x1B, ABY, 7), (0x1F, ABX, 7)]);
-        add("ALR", vec![(0x4B, IMM, 2)]);
-        add("RLA", vec![(0x23, INX, 8), (0x27, ZER, 5), (0x2F, ABS, 6), (0x33, INY, 8),
+        add("*ALR", vec![(0x4B, IMM, 2)]);
+        add("*RLA", vec![(0x23, INX, 8), (0x27, ZER, 5), (0x2F, ABS, 6), (0x33, INY, 8),
                         (0x37, ZEX, 6), (0x3B, ABY, 7), (0x3F, ABX, 7)]);
-        add("SRE", vec![(0x43, INX, 8), (0x47, ZER, 5), (0x4F, ABS, 6), (0x53, INY, 8),
+        add("*SRE", vec![(0x43, INX, 8), (0x47, ZER, 5), (0x4F, ABS, 6), (0x53, INY, 8),
                         (0x57, ZEX, 6), (0x5B, ABY, 7), (0x5F, ABX, 7)]);
-        add("RRA", vec![(0x63, INX, 8), (0x67, ZER, 5), (0x6F, ABS, 6), (0x73, INY, 8),
+        add("*RRA", vec![(0x63, INX, 8), (0x67, ZER, 5), (0x6F, ABS, 6), (0x73, INY, 8),
                         (0x77, ZEX, 6), (0x7B, ABY, 7), (0x7F, ABX, 7)]);
-        add("ARR", vec![(0x6B, IMM, 2)]);
-        add("SAX", vec![(0x83, INX, 6), (0x87, ZER, 3), (0x8F, ABS, 4), (0x97, ZEY, 4)]);
-        add("SBC", vec![(0xEB, IMM, 2)]);
-        add("LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAF, ABS, 4), (0xB3, INY, 5),
+        add("*ARR", vec![(0x6B, IMM, 2)]);
+        add("*SAX", vec![(0x83, INX, 6), (0x87, ZER, 3), (0x8F, ABS, 4), (0x97, ZEY, 4)]);
+        add("*SBC", vec![(0xEB, IMM, 2)]);
+        add("*LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAF, ABS, 4), (0xB3, INY, 5),
                         (0xB7, ZEY, 4), (0xBF, ABY, 4)]);
-        add("LAS", vec![(0xBB, ABY, 4)]);
-        add("DCP", vec![(0xC3, INX, 8), (0xC7, ZER, 5), (0xCF, ABS, 6), (0xD3, INY, 8),
+        add("*LAS", vec![(0xBB, ABY, 4)]);
+        add("*DCP", vec![(0xC3, INX, 8), (0xC7, ZER, 5), (0xCF, ABS, 6), (0xD3, INY, 8),
                         (0xD7, ZEX, 6), (0xDB, ABY, 7), (0xDF, ABX, 7)]);
-        add("ISC", vec![(0xE3, INX, 8), (0xE7, ZER, 5), (0xEF, ABS, 6), (0xF3, INY, 8),
+        add("*ISB", vec![(0xE3, INX, 8), (0xE7, ZER, 5), (0xEF, ABS, 6), (0xF3, INY, 8),
                         (0xF7, ZEX, 6), (0xFB, ABY, 7), (0xFF, ABX, 7)]);
-        add("ANC", vec![(0x0B, IMM, 2), (0x2B, IMM, 2)]);
-        add("SHX", vec![(0x9E, ABY, 5)]);
-        add("AXA", vec![(0x93, INY, 6), (0x9F, ABX, 5)]);
-        add("AXS", vec![(0xCB, IMM, 2)]);
+        add("*ANC", vec![(0x0B, IMM, 2), (0x2B, IMM, 2)]);
+        add("*SHX", vec![(0x9E, ABY, 5)]);
+        add("*AXA", vec![(0x93, INY, 6), (0x9F, ABX, 5)]);
+        add("*AXS", vec![(0xCB, IMM, 2)]);
         map
     };
 }
