@@ -79,7 +79,7 @@ impl CPU {
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
-        println!("{:<48}{}", self.format_instr(op), self.format_state());
+        println!("{}", self.format_step(op));
         self.pc += 1;
 
         self.wait_cycles = 0;
@@ -90,6 +90,10 @@ impl CPU {
             self.pc += op.mode.operand_length();
         }
         self.wait_cycles += op.cycles;
+    }
+
+    fn format_step(&self, op: &Instruction) -> String {
+        format!("{:<48}{}", self.format_instr(op), self.format_state())
     }
 
     fn format_instr(&self, op: &Instruction) -> String {
