@@ -7,11 +7,11 @@ mod addressing_mode;
 mod instruction;
 mod status_register;
 
-use crate::addressing_mode::AddressingMode;
+use addressing_mode::AddressingMode;
 use memory::Memory;
 use status_register::StatusRegister;
 
-use crate::instruction::{Instruction, INSTRUCTIONS};
+use instruction::{Instruction, INSTRUCTIONS};
 use std::ops;
 
 pub const NMI_VEC: u16 = 0xFFFA;

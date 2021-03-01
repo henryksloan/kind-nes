@@ -60,6 +60,15 @@ version = "0.1.0"
 dependencies = [
  "cpu",
  "memory",
+ "ppu",
+]
+
+[[package]]
+name = "ppu"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "memory",
 ]
 
 [[package]]
