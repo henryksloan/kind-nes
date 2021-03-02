@@ -3,5 +3,6 @@ members = [
     "sdl-ui",
     "nes",
     "cpu",
+    "ppu",
     "memory",
 ]

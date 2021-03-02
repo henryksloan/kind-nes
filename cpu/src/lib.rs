@@ -7,11 +7,11 @@ mod addressing_mode;
 mod instruction;
 mod status_register;
 
-use crate::addressing_mode::AddressingMode;
+use addressing_mode::AddressingMode;
 use memory::Memory;
 use status_register::StatusRegister;
 
-use crate::instruction::{Instruction, INSTRUCTIONS};
+use instruction::{Instruction, INSTRUCTIONS};
 use std::ops;
 
 pub const NMI_VEC: u16 = 0xFFFA;
@@ -574,6 +574,20 @@ impl CPU {
         self.p.set(StatusRegister::CARRY, data <= a_and_x);
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.a == 0);
+    }
+}
+
+impl Memory for CPU {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.memory.read(addr)
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.memory.peek(addr)
+    }
+
+    fn write(&mut self, addr: u16, data: u8) {
+        self.memory.write(addr, data);
     }
 }
 
