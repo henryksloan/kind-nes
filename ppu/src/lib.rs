@@ -97,7 +97,33 @@ impl Memory for PPU {
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        todo!()
+        match addr {
+            register_addrs::PPUSTATUS => {
+                let mut high_three = self.registers.ppustatus.high_three();
+
+                if self.scan.line == 241 && self.scan.cycle == 0 {
+                    high_three &= !0x80;
+                }
+
+                high_three | (self.registers.bus_latch & 0b000_11111)
+            }
+            register_addrs::OAMDATA => {
+                if self.scan.is_clearing_oam2() {
+                    0xFF
+                } else {
+                    self.oam.peek(self.registers.oamaddr as u16)
+                }
+            }
+            register_addrs::PPUDATA => {
+                if self.registers.curr_addr.raw <= 0x3EFF {
+                    self.registers.ppudata
+                } else {
+                    self.memory.peek(self.registers.curr_addr.raw)
+                }
+            }
+            register_addrs::OAMDMA => 0x00,
+            _ => self.registers.bus_latch,
+        }
     }
 
     fn write(&mut self, addr: u16, data: u8) {
