@@ -9,11 +9,15 @@ use memory::Memory;
 use registers::*;
 use scan::Scan;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub struct PPU {
     registers: PPURegisters,
     scan: Scan,
     memory: Box<dyn Memory>,
     oam: RAM,
+    dma_option: Option<Rc<RefCell<dyn Memory>>>,
 }
 
 impl PPU {
@@ -23,7 +27,12 @@ impl PPU {
             scan: Scan::new(),
             memory,
             oam: RAM::new(0xF0, 0),
+            dma_option: None,
         }
+    }
+
+    pub fn set_dma(&mut self, dma: Rc<RefCell<dyn Memory>>) {
+        self.dma_option = Some(dma);
     }
 
     pub fn reset(&mut self) {
@@ -80,11 +89,7 @@ impl Memory for PPU {
                 self.registers.ppudata = self.memory.read(self.registers.curr_addr.raw);
 
                 let old_addr = self.registers.curr_addr.raw;
-                if self.registers.ppuctrl.contains(ControlRegister::VRAM_INCR) {
-                    self.registers.curr_addr.raw += 32;
-                } else {
-                    self.registers.curr_addr.raw += 1;
-                };
+                self.registers.curr_addr.raw += self.registers.ppuctrl.get_vram_increment();
 
                 // Usually, reading PPUDATA updates the register but returns the old value
                 // Reading palette data ($3F00-$3FFF), however, places the new data directly on the bus
@@ -178,10 +183,38 @@ impl Memory for PPU {
                 self.registers.write_latch = !self.registers.write_latch;
             }
             register_addrs::PPUDATA => {
-                todo!()
+                self.memory.write(self.registers.curr_addr.raw, data);
+                self.registers.curr_addr.raw += self.registers.ppuctrl.get_vram_increment();
             }
             register_addrs::OAMDMA => {
-                todo!()
+                if self.dma_option.is_none() {
+                    return;
+                }
+
+                // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
+                // "1 wait state cycle while waiting for writes to complete,
+                self.cpu_cycle();
+
+                // +1 if on an odd CPU cycle,
+                if ((self.scan.total_cycles / 3) % 2) == 1 {
+                    self.cpu_cycle();
+                }
+
+                // then 256 alternating read/write cycles"
+                let base = (data as u16) << 8;
+                for i in 0..256 {
+                    let dma_val = self
+                        .dma_option
+                        .as_ref()
+                        .unwrap()
+                        .borrow_mut()
+                        .read(base + i);
+                    self.cpu_cycle(); // Read takes 1 CPU cycle
+
+                    self.oam.write(self.registers.oamaddr as u16, dma_val);
+                    self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
+                    self.cpu_cycle(); // Write takes another
+                }
             }
             _ => unimplemented!(),
         }

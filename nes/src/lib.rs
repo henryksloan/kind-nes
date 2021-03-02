@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct NES {
-    cpu: CPU,
+    cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
 }
 
@@ -25,14 +25,16 @@ impl NES {
         cpu_mmu.map_mirrored(0x2000, 0x3FFF, 0x0008, ppu.clone());
         // cpu_mmu.map(&apu_io_reg, 0x4000, 0x401F);
         // cpu_mmu.map(&cart, 0x4020, 0xFFFF);
-        let mut cpu = CPU::new(Box::from(cpu_mmu));
-        cpu.reset();
+        let cpu = Rc::new(RefCell::new(CPU::new(Box::from(cpu_mmu))));
+        cpu.borrow_mut().reset();
+
+        ppu.borrow_mut().set_dma(cpu.clone());
 
         Self { cpu, ppu }
     }
 
     pub fn tick(&mut self) {
-        self.cpu.tick();
+        self.cpu.borrow_mut().tick();
         self.ppu.borrow_mut().cpu_cycle();
     }
 }

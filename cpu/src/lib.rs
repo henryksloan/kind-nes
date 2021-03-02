@@ -577,6 +577,20 @@ impl CPU {
     }
 }
 
+impl Memory for CPU {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.memory.read(addr)
+    }
+
+    fn peek(&self, addr: u16) -> u8 {
+        self.memory.peek(addr)
+    }
+
+    fn write(&mut self, addr: u16, data: u8) {
+        self.memory.write(addr, data);
+    }
+}
+
 /// Translates a binary integer to a "Binary Coded Decimal"
 /// i.e. decimal(49) => 0x49
 fn bin_to_bcd(x: u8) -> Result<u8, &'static str> {

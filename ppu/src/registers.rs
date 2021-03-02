@@ -78,6 +78,14 @@ impl ControlRegister {
     pub fn write(&mut self, val: u8) {
         self.bits = val;
     }
+
+    pub fn get_vram_increment(&self) -> u16 {
+        if self.contains(Self::VRAM_INCR) {
+            32
+        } else {
+            1
+        }
+    }
 }
 
 bitflags! {
