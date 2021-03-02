@@ -1,4 +1,16 @@
 // https://wiki.nesdev.com/w/index.php/PPU_registers
+pub mod register_addrs {
+    pub const PPUCTRL: u16 = 0x2000;
+    pub const PPUMASK: u16 = 0x2001;
+    pub const PPUSTATUS: u16 = 0x2002;
+    pub const OAMDATA: u16 = 0x2003;
+    pub const OAMADDR: u16 = 0x2004;
+    pub const PPUSCROLL: u16 = 0x2005;
+    pub const PPUADDR: u16 = 0x2006;
+    pub const PPUDATA: u16 = 0x2007;
+    pub const OAMDMA: u16 = 0x4014;
+}
+
 pub struct PPURegisters {
     pub ppuctrl: ControlRegister,
     pub ppumask: MaskRegister,
@@ -6,12 +18,13 @@ pub struct PPURegisters {
     pub oamaddr: u8,
     pub oamdata: u8,
     pub ppudata: u8,
-    pub oamdma: u8,
 
     pub curr_addr: AddressRegister,
     pub temp_addr: AddressRegister,
     pub write_latch: bool,
     pub fine_x: u8,
+
+    pub bus_latch: u8,
 }
 
 // https://wiki.nesdev.com/w/index.php/PPU_power_up_state
@@ -24,12 +37,13 @@ impl PPURegisters {
             oamaddr: 0x00,
             oamdata: 0x00,
             ppudata: 0x00,
-            oamdma: 0x00,
 
-            curr_addr: AddressRegister::empty(),
-            temp_addr: AddressRegister::empty(),
+            curr_addr: AddressRegister::new(),
+            temp_addr: AddressRegister::new(),
             write_latch: false,
             fine_x: 0,
+
+            bus_latch: 0,
         }
     }
 
@@ -38,10 +52,10 @@ impl PPURegisters {
         self.ppumask.bits = 0;
         self.ppustatus.bits &= 0b1000_0000;
         // OAMADDR unchanged
-        self.write_latch = false;
-        // v, t, and fine_x unchanged (?)
         self.ppudata = 0x00;
-        self.oamdma = 0x00;
+        // v, t, and fine_x unchanged (?)
+        self.write_latch = false;
+        self.bus_latch = 0;
     }
 }
 
@@ -73,6 +87,12 @@ bitflags! {
     }
 }
 
+impl MaskRegister {
+    pub fn is_rendering(&self) -> bool {
+        self.contains(Self::BACK_ENABLE) || self.contains(Self::SPRITE_ENABLE)
+    }
+}
+
 bitflags! {
     pub struct StatusRegister: u8 {
         const SPRITE_OVERFLOW = 1 << 5;
@@ -81,11 +101,37 @@ bitflags! {
     }
 }
 
-bitflags! {
-    pub struct AddressRegister: u16 {
-        const COARSE_X       = 0b000_00_00000_11111;
-        const COARSE_Y       = 0b000_00_11111_00000;
-        const NAMETABLE_SEL  = 0b000_11_00000_00000;
-        const FINE_Y         = 0b111_00_00000_00000;
+impl StatusRegister {
+    pub fn high_three(&self) -> u8 {
+        self.bits() & 0b111_00000
+    }
+}
+
+pub struct AddressRegister {
+    pub raw: u16,
+}
+
+impl AddressRegister {
+    const COARSE_X: (u16, u16) = (0, 5); // (offset, length)
+    const COARSE_Y: (u16, u16) = (5, 5);
+    const NAMETABLE_SEL: (u16, u16) = (10, 2);
+    const FINE_Y: (u16, u16) = (12, 3);
+
+    pub fn new() -> Self {
+        Self { raw: 0 }
+    }
+
+    fn bitmask(mask: (u16, u16)) -> u16 {
+        ((1 << mask.1) - 1) << mask.0 // e.g. (5, 5) => 1111100000
+    }
+
+    pub fn set(&mut self, mask: (u16, u16), val: u8) {
+        let bitmask = Self::bitmask(mask);
+        self.raw &= !bitmask;
+        self.raw |= ((val as u16) << mask.0) & bitmask;
+    }
+
+    pub fn get(&self, mask: (u16, u16)) -> u16 {
+        self.raw | Self::bitmask(mask)
     }
 }
