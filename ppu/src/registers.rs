@@ -74,6 +74,12 @@ bitflags! {
     }
 }
 
+impl ControlRegister {
+    pub fn write(&mut self, val: u8) {
+        self.bits = val;
+    }
+}
+
 bitflags! {
     pub struct MaskRegister: u8 {
         const GRAYSCALE       = 1 << 0;
@@ -88,6 +94,10 @@ bitflags! {
 }
 
 impl MaskRegister {
+    pub fn write(&mut self, val: u8) {
+        self.bits = val;
+    }
+
     pub fn is_rendering(&self) -> bool {
         self.contains(Self::BACK_ENABLE) || self.contains(Self::SPRITE_ENABLE)
     }
@@ -112,11 +122,6 @@ pub struct AddressRegister {
 }
 
 impl AddressRegister {
-    const COARSE_X: (u16, u16) = (0, 5); // (offset, length)
-    const COARSE_Y: (u16, u16) = (5, 5);
-    const NAMETABLE_SEL: (u16, u16) = (10, 2);
-    const FINE_Y: (u16, u16) = (12, 3);
-
     pub fn new() -> Self {
         Self { raw: 0 }
     }
@@ -134,4 +139,14 @@ impl AddressRegister {
     pub fn get(&self, mask: (u16, u16)) -> u16 {
         self.raw | Self::bitmask(mask)
     }
+}
+
+pub mod vram_addr {
+    pub const COARSE_X: (u16, u16) = (0, 5); // (offset, length)
+    pub const COARSE_Y: (u16, u16) = (5, 5);
+    pub const NAMETABLE_SEL: (u16, u16) = (10, 2);
+    pub const FINE_Y: (u16, u16) = (12, 3);
+
+    pub const LO_BYTE: (u16, u16) = (0, 8);
+    pub const HI_BYTE: (u16, u16) = (8, 8);
 }

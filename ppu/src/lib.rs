@@ -43,6 +43,8 @@ impl PPU {
 
 impl Memory for PPU {
     fn read(&mut self, addr: u16) -> u8 {
+        assert!((addr >= 0x2000 && addr <= 0x2007) || addr == 0x4014);
+
         match addr {
             register_addrs::PPUSTATUS => {
                 let mut high_three = self.registers.ppustatus.high_three();
@@ -59,7 +61,7 @@ impl Memory for PPU {
                 self.registers
                     .ppustatus
                     .remove(StatusRegister::VBLANK_STARTED);
-                // TODO: NMI... could probably be flag checks before and after call to PPU::cpu_cycle
+                // TODO: NMI
 
                 high_three | (self.registers.bus_latch & 0b000_11111)
             }
@@ -97,6 +99,8 @@ impl Memory for PPU {
     }
 
     fn peek(&self, addr: u16) -> u8 {
+        assert!((addr >= 0x2000 && addr <= 0x2007) || addr == 0x4014);
+
         match addr {
             register_addrs::PPUSTATUS => {
                 let mut high_three = self.registers.ppustatus.high_three();
@@ -127,6 +131,59 @@ impl Memory for PPU {
     }
 
     fn write(&mut self, addr: u16, data: u8) {
-        todo!()
+        assert!((addr >= 0x2000 && addr <= 0x2007) || addr == 0x4014);
+
+        match addr {
+            register_addrs::PPUCTRL => {
+                let old_nmi = self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE);
+                self.registers.ppuctrl.write(data);
+                let nmi_rising_edge =
+                    !old_nmi && self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE);
+                let vblank_set = self
+                    .registers
+                    .ppustatus
+                    .contains(StatusRegister::VBLANK_STARTED);
+                if vblank_set && nmi_rising_edge {
+                    // TODO: NMI
+                }
+                self.registers
+                    .temp_addr
+                    .set(vram_addr::NAMETABLE_SEL, data & 0b11);
+            }
+            register_addrs::PPUMASK => self.registers.ppumask.write(data),
+            register_addrs::OAMADDR => self.registers.oamaddr = data,
+            register_addrs::OAMDATA => {
+                self.oam.write(self.registers.oamaddr as u16, data);
+                self.registers.oamaddr += 1;
+            }
+            register_addrs::PPUSCROLL => {
+                use vram_addr::*;
+                if !self.registers.write_latch {
+                    self.registers.temp_addr.set(COARSE_X, data >> 3);
+                    self.registers.fine_x = data & 0b111;
+                } else {
+                    self.registers.temp_addr.set(COARSE_Y, data >> 3);
+                    self.registers.temp_addr.set(FINE_Y, data & 0b111);
+                }
+                self.registers.write_latch = !self.registers.write_latch;
+            }
+            register_addrs::PPUADDR => {
+                use vram_addr::*;
+                if !self.registers.write_latch {
+                    self.registers.temp_addr.set(HI_BYTE, data & 0b00111111);
+                } else {
+                    self.registers.temp_addr.set(LO_BYTE, data);
+                    self.registers.curr_addr.raw = self.registers.temp_addr.raw;
+                }
+                self.registers.write_latch = !self.registers.write_latch;
+            }
+            register_addrs::PPUDATA => {
+                todo!()
+            }
+            register_addrs::OAMDMA => {
+                todo!()
+            }
+            _ => unimplemented!(),
+        }
     }
 }
