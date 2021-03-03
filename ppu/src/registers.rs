@@ -86,6 +86,14 @@ impl ControlRegister {
             1
         }
     }
+
+    pub fn get_patt_base(&self) -> u16 {
+        if self.contains(Self::BACK_PATT_ADDR) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
 }
 
 bitflags! {
@@ -149,7 +157,7 @@ impl AddressRegister {
     }
 
     pub fn get(&self, mask: (u16, u16)) -> u16 {
-        self.raw & Self::bitmask(mask)
+        (self.raw & Self::bitmask(mask)) >> mask.0
     }
 
     pub fn copy_horizontal(&mut self, other: &AddressRegister) {
@@ -160,10 +168,40 @@ impl AddressRegister {
 
     pub fn copy_vertical(&mut self, other: &AddressRegister) {
         use vram_addr::*;
-        self.set(COARSE_Y, (other.get(COARSE_Y) >> 5) as u8);
-        self.set(FINE_Y, (other.get(FINE_Y) >> 12) as u8);
+        self.set(COARSE_Y, other.get(COARSE_Y) as u8);
+        self.set(FINE_Y, other.get(FINE_Y) as u8);
         self.raw &= !(1 << 11); // High NT bit
         self.raw |= other.raw & (1 << 11);
+    }
+
+    pub fn increment_horizontal(&mut self) {
+        // https://wiki.nesdev.com/w/index.php/PPU_scrolling#Coarse_X_increment
+        let coarse_x = self.get(vram_addr::COARSE_X) as u8;
+        if coarse_x == 0b11111 {
+            self.set(vram_addr::COARSE_X, 0);
+            self.raw ^= 0x0400; // Switch horizontal nametable
+        } else {
+            self.set(vram_addr::COARSE_X, coarse_x + 1);
+        }
+    }
+
+    pub fn increment_vertical(&mut self) {
+        // https://wiki.nesdev.com/w/index.php/PPU_scrolling#Y_increment
+        let fine_y = self.get(vram_addr::FINE_Y) as u8;
+        if fine_y < 0b111 {
+            self.set(vram_addr::FINE_Y, fine_y + 1);
+        } else {
+            self.set(vram_addr::FINE_Y, 0);
+            let coarse_y = self.get(vram_addr::COARSE_Y) as u8;
+            if coarse_y == 29 {
+                self.set(vram_addr::COARSE_Y, 0);
+                self.raw ^= 0x0800; // Switch vertical nametable
+            } else if coarse_y == 31 {
+                self.set(vram_addr::COARSE_Y, 0);
+            } else {
+                self.set(vram_addr::COARSE_Y, coarse_y + 1);
+            }
+        }
     }
 }
 

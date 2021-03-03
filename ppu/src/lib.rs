@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate bitflags;
 
+mod background_data;
 mod registers;
 mod scan;
 
+use background_data::BackgroundData;
 use memory::ram::RAM;
 use memory::Memory;
 use registers::*;
@@ -15,6 +17,7 @@ use std::rc::Rc;
 pub struct PPU {
     registers: PPURegisters,
     scan: Scan,
+    bg_data: BackgroundData,
     memory: Box<dyn Memory>,
     oam: RAM,
     oam2: RAM,
@@ -26,6 +29,7 @@ impl PPU {
         PPU {
             registers: PPURegisters::new(),
             scan: Scan::new(),
+            bg_data: BackgroundData::new(),
             memory,
             oam: RAM::new(0xF0, 0),
             oam2: RAM::new(0x20, 0),
@@ -103,7 +107,63 @@ impl PPU {
     }
 
     fn bg_fetch(&mut self, cycles_into_tile: u16) {
-        todo!()
+        // https://wiki.nesdev.com/w/index.php/PPU_rendering#Cycles_1-256
+        match cycles_into_tile {
+            0 => {
+                // https://wiki.nesdev.com/w/index.php/PPU_scrolling#Tile_and_attribute_fetching
+                // Read tile data from a nametable
+                let nt_addr = 0x2000 | (self.registers.curr_addr.raw & 0x0FFF);
+                self.bg_data.latch.nt_byte = self.memory.read(nt_addr);
+            }
+            2 => {
+                // https://wiki.nesdev.com/w/index.php/PPU_scrolling#Tile_and_attribute_fetching
+                // Read attribute data from the nametable's attribute table
+                let attr_addr = 0x23C0
+                    | (self.registers.curr_addr.raw & 0x0C00) // Nametable select
+                    | ((self.registers.curr_addr.raw >> 4) & 0x38) // High 3 coarse Y => attr table row
+                    | ((self.registers.curr_addr.raw >> 2) & 0x07); // High 3 coarse X => attr table col
+                self.bg_data.latch.attr_byte = self.memory.read(attr_addr);
+
+                // https://wiki.nesdev.com/w/index.php/PPU_attribute_tables
+                // Move the correct bit pair to the low end of the latch
+                if self.registers.curr_addr.get(vram_addr::COARSE_Y) & 0b10 == 0b10 {
+                    self.bg_data.latch.attr_byte >>= 4;
+                }
+                if self.registers.curr_addr.get(vram_addr::COARSE_X) & 0b10 == 0b10 {
+                    self.bg_data.latch.attr_byte >>= 2;
+                }
+            }
+            4 => {
+                // https://wiki.nesdev.com/w/index.php/PPU_pattern_tables
+                // Read pattern data from the lower bit plane of the pattern table
+                let patt_addr = self.registers.ppuctrl.get_patt_base() // PPUCTRL selects left or right half of table
+                    | ((self.bg_data.latch.nt_byte as u16) << 4) // NT byte is 4 bits of row, 4 bits of col
+                    | self.registers.curr_addr.get(vram_addr::FINE_Y); // "the row number within a tile"
+
+                self.bg_data.latch.patt_lo = self.memory.read(patt_addr + 0);
+            }
+            6 => {
+                // Read pattern data from the upper bit plane of the pattern table
+                let patt_addr = self.registers.ppuctrl.get_patt_base()
+                    | ((self.bg_data.latch.nt_byte as u16) << 4)
+                    | self.registers.curr_addr.get(vram_addr::FINE_Y);
+
+                // Same as lower bit, but adding 0b1000 selects the upper table plane
+                self.bg_data.latch.patt_lo = self.memory.read(patt_addr + 8);
+            }
+            7 => {
+                if self.registers.ppumask.is_rendering() {
+                    // This is redundant at the end of a row of pixels, but hardware still does it
+                    self.registers.curr_addr.increment_horizontal();
+
+                    // Increment y position at the end of the row
+                    if self.scan.cycle == 256 {
+                        self.registers.curr_addr.increment_vertical();
+                    }
+                }
+            }
+            _ => {} // Reads take two cycles, so we just skip the odd ones
+        }
     }
 
     fn spr_fetch(&mut self, cycles_into_tile: u16) {
@@ -182,7 +242,7 @@ impl Memory for PPU {
                 high_three | (self.registers.bus_latch & 0b000_11111)
             }
             register_addrs::OAMDATA => {
-                if self.scan.is_clearing_oam2() {
+                if self.scan.on_visible_line() && self.scan.on_oam2_clear_cycle() {
                     0xFF
                 } else {
                     self.oam.peek(self.registers.oamaddr as u16)
