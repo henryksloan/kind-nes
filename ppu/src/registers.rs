@@ -121,7 +121,11 @@ bitflags! {
 
 impl StatusRegister {
     pub fn high_three(&self) -> u8 {
-        self.bits() & 0b111_00000
+        self.bits & 0b111_00000
+    }
+
+    pub fn clear(&mut self) {
+        self.bits = 0;
     }
 }
 
@@ -145,7 +149,21 @@ impl AddressRegister {
     }
 
     pub fn get(&self, mask: (u16, u16)) -> u16 {
-        self.raw | Self::bitmask(mask)
+        self.raw & Self::bitmask(mask)
+    }
+
+    pub fn copy_horizontal(&mut self, other: &AddressRegister) {
+        self.set(vram_addr::COARSE_X, other.get(vram_addr::COARSE_X) as u8);
+        self.raw &= !(1 << 10); // Low NT bit
+        self.raw |= other.raw & (1 << 10);
+    }
+
+    pub fn copy_vertical(&mut self, other: &AddressRegister) {
+        use vram_addr::*;
+        self.set(COARSE_Y, (other.get(COARSE_Y) >> 5) as u8);
+        self.set(FINE_Y, (other.get(FINE_Y) >> 12) as u8);
+        self.raw &= !(1 << 11); // High NT bit
+        self.raw |= other.raw & (1 << 11);
     }
 }
 

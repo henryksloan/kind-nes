@@ -17,6 +17,7 @@ pub struct PPU {
     scan: Scan,
     memory: Box<dyn Memory>,
     oam: RAM,
+    oam2: RAM,
     dma_option: Option<Rc<RefCell<dyn Memory>>>,
 }
 
@@ -27,6 +28,7 @@ impl PPU {
             scan: Scan::new(),
             memory,
             oam: RAM::new(0xF0, 0),
+            oam2: RAM::new(0x20, 0),
             dma_option: None,
         }
     }
@@ -40,13 +42,76 @@ impl PPU {
     }
 
     pub fn tick(&mut self) {
-        todo!()
+        // https://wiki.nesdev.com/w/images/d/d1/Ntsc_timing.png
+        // Background operations happend on visible lines and pre-render line
+        if self.scan.on_visible_line() || self.scan.on_prerender_line() {
+            if self.scan.on_idle_cycle() {
+                // Idle
+            } else if self.scan.on_bg_fetch_cycle() {
+                self.bg_fetch((self.scan.cycle - 1) % 8);
+            } else if self.scan.cycle == 257 {
+                // https://wiki.nesdev.com/w/index.php/PPU_scrolling#At_dot_257_of_each_scanline
+                self.registers
+                    .curr_addr
+                    .copy_horizontal(&self.registers.temp_addr);
+            }
+
+            if self.scan.on_spr_fetch_cycle() {
+                self.spr_fetch((self.scan.cycle - 1) % 8);
+            }
+        }
+
+        // Sprite operations that happen only on visible lines
+        if self.scan.on_visible_line() {
+            if self.scan.on_oam2_clear_cycle() {
+                if (self.scan.cycle - 1) % 2 == 0 {
+                    self.oam2.write(self.scan.cycle / 2, 0xFF);
+                }
+            } else if self.scan.on_spr_eval_cycle() {
+                self.spr_eval((self.scan.cycle % 2) == 1);
+            }
+        }
+
+        // https://wiki.nesdev.com/w/index.php/PPU_scrolling#During_dots_280_to_304_of_the_pre-render_scanline_.28end_of_vblank.29
+        if self.scan.on_prerender_line() && (280 <= self.scan.cycle && self.scan.cycle <= 304) {
+            self.registers
+                .curr_addr
+                .copy_vertical(&self.registers.temp_addr);
+        }
+
+        // Set or clear VBlank and other flags
+        if self.scan.cycle == 1 {
+            if self.scan.cycle == 241 {
+                self.registers
+                    .ppustatus
+                    .insert(StatusRegister::VBLANK_STARTED);
+                if self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE) {
+                    // TODO: NMI
+                }
+            } else if self.scan.cycle == 261 {
+                self.registers.ppustatus.clear();
+            }
+        }
+
+        self.scan.increment(self.registers.ppumask.is_rendering());
     }
 
     pub fn cpu_cycle(&mut self) {
         for _ in 0..3 {
             self.tick();
         }
+    }
+
+    fn bg_fetch(&mut self, cycles_into_tile: u16) {
+        todo!()
+    }
+
+    fn spr_fetch(&mut self, cycles_into_tile: u16) {
+        todo!()
+    }
+
+    fn spr_eval(&mut self, odd_cycle: bool) {
+        todo!()
     }
 }
 
@@ -78,7 +143,7 @@ impl Memory for PPU {
                 // https://wiki.nesdev.com/w/index.php/PPU_sprite_evaluation
                 // During secondary OAM clear, the secondary OAM actually still functions as usual;
                 // however, a signal activates that pulls reads of OAMDATA to $FF
-                if self.scan.is_clearing_oam2() {
+                if self.scan.on_visible_line() && self.scan.on_oam2_clear_cycle() {
                     0xFF
                 } else {
                     self.oam.read(self.registers.oamaddr as u16)
