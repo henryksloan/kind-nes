@@ -46,7 +46,29 @@ impl Scan {
         self.line <= 239
     }
 
-    pub fn is_clearing_oam2(&self) -> bool {
-        self.on_visible_line() && (1 <= self.cycle && self.cycle <= 64)
+    pub fn on_prerender_line(&self) -> bool {
+        self.line == 261
+    }
+
+    // These _cycle functions make assumptions about the type of line
+    // e.g. OAM2 clear only actually happens on visible lines
+    pub fn on_oam2_clear_cycle(&self) -> bool {
+        1 <= self.cycle && self.cycle <= 64
+    }
+
+    pub fn on_idle_cycle(&self) -> bool {
+        self.cycle == 0 || (258 <= self.cycle && self.cycle <= 320)
+    }
+
+    pub fn on_bg_fetch_cycle(&self) -> bool {
+        1 <= self.cycle && self.cycle <= 256
+    }
+
+    pub fn on_spr_fetch_cycle(&self) -> bool {
+        257 <= self.cycle && self.cycle <= 320
+    }
+
+    pub fn on_spr_eval_cycle(&self) -> bool {
+        65 <= self.cycle && self.cycle <= 256
     }
 }
