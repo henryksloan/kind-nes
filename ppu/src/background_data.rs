@@ -31,5 +31,5 @@ pub struct BackgroundLatches {
 pub struct BackgroundShifts {
   pub attr_shift: [u8; 2],
   pub attr_latch: [bool; 2],
-  pub patt_shift: [u8; 2],
+  pub patt_shift: [u16; 2],
 }
