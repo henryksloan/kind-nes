@@ -22,7 +22,9 @@ pub struct PPU {
     oam: RAM,
     oam2: RAM,
     dma_option: Option<Rc<RefCell<dyn Memory>>>,
-    framebuffer: [[u8; 256]; 240],
+    pub framebuffer: [[u8; 256]; 240],
+    pub nmi: bool,
+    pub frame_ready: bool,
 }
 
 impl PPU {
@@ -32,10 +34,12 @@ impl PPU {
             scan: Scan::new(),
             bg_data: BackgroundData::new(),
             memory,
-            oam: RAM::new(0xF0, 0),
+            oam: RAM::new(0x100, 0),
             oam2: RAM::new(0x20, 0),
             dma_option: None,
             framebuffer: [[0; 256]; 240],
+            nmi: false,
+            frame_ready: false,
         }
     }
 
@@ -44,7 +48,7 @@ impl PPU {
     }
 
     pub fn reset(&mut self) {
-        todo!()
+        // todo!()
     }
 
     pub fn tick(&mut self) {
@@ -55,7 +59,7 @@ impl PPU {
                 // Idle
             } else if self.scan.on_bg_fetch_cycle() {
                 self.bg_fetch((self.scan.cycle - 1) % 8);
-            } else if self.scan.cycle == 257 {
+            } else if self.scan.cycle == 257 && self.registers.ppumask.is_rendering() {
                 // https://wiki.nesdev.com/w/index.php/PPU_scrolling#At_dot_257_of_each_scanline
                 self.registers
                     .curr_addr
@@ -77,7 +81,7 @@ impl PPU {
                 self.spr_eval((self.scan.cycle % 2) == 1);
             }
 
-            if 1 <= self.scan.cycle && self.scan.cycle <= 257 {
+            if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
                 let (pixel_on, color) = self.get_bg_pixel();
                 if pixel_on {
                     let x = (self.scan.cycle - 1) as usize;
@@ -88,7 +92,10 @@ impl PPU {
         }
 
         // https://wiki.nesdev.com/w/index.php/PPU_scrolling#During_dots_280_to_304_of_the_pre-render_scanline_.28end_of_vblank.29
-        if self.scan.on_prerender_line() && (280 <= self.scan.cycle && self.scan.cycle <= 304) {
+        if self.scan.on_prerender_line()
+            && self.registers.ppumask.is_rendering()
+            && (280 <= self.scan.cycle && self.scan.cycle <= 304)
+        {
             self.registers
                 .curr_addr
                 .copy_vertical(&self.registers.temp_addr);
@@ -96,14 +103,15 @@ impl PPU {
 
         // Set or clear VBlank and other flags
         if self.scan.cycle == 1 {
-            if self.scan.cycle == 241 {
+            if self.scan.line == 241 {
                 self.registers
                     .ppustatus
                     .insert(StatusRegister::VBLANK_STARTED);
                 if self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE) {
-                    // TODO: NMI
+                    self.nmi = true;
+                    self.frame_ready = true;
                 }
-            } else if self.scan.cycle == 261 {
+            } else if self.scan.line == 261 {
                 self.registers.ppustatus.clear();
             }
         }
@@ -168,7 +176,7 @@ impl PPU {
                     | self.registers.curr_addr.get(vram_addr::FINE_Y);
 
                 // Same as lower bit, but adding 0b1000 selects the upper table plane
-                self.bg_data.latch.patt_lo = self.memory.read(patt_addr + 8);
+                self.bg_data.latch.patt_hi = self.memory.read(patt_addr + 8);
             }
             7 => {
                 if self.registers.ppumask.is_rendering() {
@@ -186,11 +194,11 @@ impl PPU {
     }
 
     fn spr_fetch(&mut self, cycles_into_tile: u16) {
-        todo!()
+        // todo!()
     }
 
     fn spr_eval(&mut self, odd_cycle: bool) {
-        todo!()
+        // todo!()
     }
 
     fn get_bg_pixel(&mut self) -> (bool, u8) {
@@ -198,9 +206,9 @@ impl PPU {
         let nth_bit = |val: u16, n: u8| (val & (1 << n)) >> n;
 
         let offset = self.registers.fine_x;
-        let patt_pair = nth_bit(self.bg_data.shift.patt_shift[1], 15 - offset)
+        let patt_pair = (nth_bit(self.bg_data.shift.patt_shift[1], 15 - offset) << 1)
             | nth_bit(self.bg_data.shift.patt_shift[0], 15 - offset);
-        let attr_pair = nth_bit(self.bg_data.shift.attr_shift[1] as u16, 7 - offset)
+        let attr_pair = (nth_bit(self.bg_data.shift.attr_shift[1] as u16, 7 - offset) << 1)
             | nth_bit(self.bg_data.shift.attr_shift[0] as u16, 7 - offset);
 
         self.bg_data.shift.patt_shift[0] <<= 1;
@@ -218,7 +226,8 @@ impl PPU {
 
         // TODO: Make a struct for this
         // (pixel_on, color)
-        (patt_pair != 0, self.memory.read(color_index))
+        // (patt_pair != 0, self.memory.read(color_index))
+        (true, self.memory.read(color_index))
     }
 }
 
@@ -243,6 +252,7 @@ impl Memory for PPU {
                     .ppustatus
                     .remove(StatusRegister::VBLANK_STARTED);
                 // TODO: NMI
+                // self.nmi = true;
 
                 high_three | (self.registers.bus_latch & 0b000_11111)
             }
@@ -322,6 +332,7 @@ impl Memory for PPU {
                     .contains(StatusRegister::VBLANK_STARTED);
                 if vblank_set && nmi_rising_edge {
                     // TODO: NMI
+                    // self.nmi = true;
                 }
                 self.registers
                     .temp_addr
@@ -331,7 +342,7 @@ impl Memory for PPU {
             register_addrs::OAMADDR => self.registers.oamaddr = data,
             register_addrs::OAMDATA => {
                 self.oam.write(self.registers.oamaddr as u16, data);
-                self.registers.oamaddr += 1;
+                self.registers.oamaddr += self.registers.oamaddr.wrapping_add(1);
             }
             register_addrs::PPUSCROLL => {
                 use vram_addr::*;

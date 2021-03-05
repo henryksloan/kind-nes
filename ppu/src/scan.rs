@@ -61,7 +61,7 @@ impl Scan {
     }
 
     pub fn on_bg_fetch_cycle(&self) -> bool {
-        1 <= self.cycle && self.cycle <= 256
+        (1 <= self.cycle && self.cycle <= 256) || (321 <= self.cycle && self.cycle <= 336)
     }
 
     pub fn on_spr_fetch_cycle(&self) -> bool {
