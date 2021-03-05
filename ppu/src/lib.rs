@@ -22,6 +22,7 @@ pub struct PPU {
     oam: RAM,
     oam2: RAM,
     dma_option: Option<Rc<RefCell<dyn Memory>>>,
+    dma_request: Option<u8>,
     pub framebuffer: [[u8; 256]; 240],
     pub nmi: bool,
     pub frame_ready: bool,
@@ -37,6 +38,7 @@ impl PPU {
             oam: RAM::new(0x100, 0),
             oam2: RAM::new(0x20, 0),
             dma_option: None,
+            dma_request: None,
             framebuffer: [[0; 256]; 240],
             nmi: false,
             frame_ready: false,
@@ -52,6 +54,11 @@ impl PPU {
     }
 
     pub fn tick(&mut self) {
+        if let Some(data) = self.dma_request {
+            self.dma_request = None;
+            self.run_oam_dma(data);
+        }
+
         // https://wiki.nesdev.com/w/images/d/d1/Ntsc_timing.png
         // Background operations happend on visible lines and pre-render line
         if self.scan.on_visible_line() || self.scan.on_prerender_line() {
@@ -109,8 +116,8 @@ impl PPU {
                     .insert(StatusRegister::VBLANK_STARTED);
                 if self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE) {
                     self.nmi = true;
-                    self.frame_ready = true;
                 }
+                self.frame_ready = true;
             } else if self.scan.line == 261 {
                 self.registers.ppustatus.clear();
             }
@@ -228,6 +235,37 @@ impl PPU {
         // (pixel_on, color)
         // (patt_pair != 0, self.memory.read(color_index))
         (true, self.memory.read(color_index))
+    }
+
+    fn run_oam_dma(&mut self, data: u8) {
+        if self.dma_option.is_none() {
+            return;
+        }
+
+        // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
+        // "1 wait state cycle while waiting for writes to complete,
+        self.cpu_cycle();
+
+        // +1 if on an odd CPU cycle,
+        if ((self.scan.total_cycles / 3) % 2) == 1 {
+            self.cpu_cycle();
+        }
+
+        // then 256 alternating read/write cycles"
+        let base = (data as u16) << 8;
+        for i in 0..256 {
+            let dma_val = self
+                .dma_option
+                .as_ref()
+                .unwrap()
+                .borrow_mut()
+                .read(base + i);
+            self.cpu_cycle(); // Read takes 1 CPU cycle
+
+            self.oam.write(self.registers.oamaddr as u16, dma_val);
+            self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
+            self.cpu_cycle(); // Write takes another
+        }
     }
 }
 
@@ -370,34 +408,7 @@ impl Memory for PPU {
                 self.registers.curr_addr.raw += self.registers.ppuctrl.get_vram_increment();
             }
             register_addrs::OAMDMA => {
-                if self.dma_option.is_none() {
-                    return;
-                }
-
-                // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
-                // "1 wait state cycle while waiting for writes to complete,
-                self.cpu_cycle();
-
-                // +1 if on an odd CPU cycle,
-                if ((self.scan.total_cycles / 3) % 2) == 1 {
-                    self.cpu_cycle();
-                }
-
-                // then 256 alternating read/write cycles"
-                let base = (data as u16) << 8;
-                for i in 0..256 {
-                    let dma_val = self
-                        .dma_option
-                        .as_ref()
-                        .unwrap()
-                        .borrow_mut()
-                        .read(base + i);
-                    self.cpu_cycle(); // Read takes 1 CPU cycle
-
-                    self.oam.write(self.registers.oamaddr as u16, dma_val);
-                    self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
-                    self.cpu_cycle(); // Write takes another
-                }
+                self.dma_request = Some(data);
             }
             _ => unimplemented!(),
         }
