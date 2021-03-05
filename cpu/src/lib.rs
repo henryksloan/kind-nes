@@ -22,6 +22,7 @@ const STACK_BASE: u16 = 0x0100;
 const STACK_INIT: u8 = 0xfd;
 
 const DECIMAL_ENABLED: bool = false;
+const DEBUG: bool = false;
 
 pub struct CPU {
     // Registers
@@ -71,16 +72,20 @@ impl CPU {
             self.cycles += 1;
             None
         } else {
-            Some(self.step())
+            self.step()
         }
     }
 
-    pub fn step(&mut self) -> String {
+    pub fn step(&mut self) -> Option<String> {
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
-        let log = self.format_step(op);
+        let log = if DEBUG {
+            Some(self.format_step(op))
+        } else {
+            None
+        };
         self.pc += 1;
 
         self.wait_cycles = 0;
@@ -93,6 +98,12 @@ impl CPU {
         self.wait_cycles += op.cycles;
 
         log
+    }
+
+    pub fn nmi(&mut self) {
+        self.stack_push_u16(self.pc);
+        self.stack_push(self.p.bits());
+        self.pc = self.memory.read_u16(NMI_VEC);
     }
 
     fn format_step(&self, op: &Instruction) -> String {
