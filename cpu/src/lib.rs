@@ -22,7 +22,6 @@ const STACK_BASE: u16 = 0x0100;
 const STACK_INIT: u8 = 0xfd;
 
 const DECIMAL_ENABLED: bool = false;
-const DEBUG: bool = false;
 
 pub struct CPU {
     // Registers
@@ -35,6 +34,7 @@ pub struct CPU {
     pc: u16, // Program counter
     wait_cycles: u32,
     cycles: usize,
+    pub log: bool,
 
     memory: Box<dyn Memory>,
 }
@@ -50,6 +50,7 @@ impl CPU {
             pc: 0,
             wait_cycles: 0,
             cycles: 0,
+            log: false,
             memory,
         }
     }
@@ -81,7 +82,7 @@ impl CPU {
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
-        let log = if DEBUG {
+        let log = if self.log {
             Some(self.format_step(op))
         } else {
             None
