@@ -90,10 +90,12 @@ impl PPU {
 
             if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
                 let (pixel_on, color) = self.get_bg_pixel();
-                if pixel_on {
-                    let x = (self.scan.cycle - 1) as usize;
-                    let y = self.scan.line as usize;
-                    self.framebuffer[y][x] = color;
+                let x = (self.scan.cycle - 1) as usize;
+                let y = self.scan.line as usize;
+                self.framebuffer[y][x] = if pixel_on {
+                    color
+                } else {
+                    self.memory.read(0x3F00)
                 }
             }
         }
@@ -226,6 +228,13 @@ impl PPU {
         self.bg_data.shift.attr_shift[1] <<= 1;
         self.bg_data.shift.attr_shift[1] |= self.bg_data.shift.attr_latch[1] as u8;
 
+        if !self.registers.ppumask.contains(MaskRegister::BACK_ENABLE)
+            || (!self.registers.ppumask.contains(MaskRegister::BACK_LEFT_COL)
+                && (self.scan.cycle - 1 < 8))
+        {
+            return (false, 0x00);
+        }
+
         // https://wiki.nesdev.com/w/index.php/PPU_palettes#Memory_Map
         let color_index = 0x3F00 // Palette RAM base = universal background color
             | (attr_pair << 2) // "Palette number from attribute table"
@@ -233,8 +242,7 @@ impl PPU {
 
         // TODO: Make a struct for this
         // (pixel_on, color)
-        // (patt_pair != 0, self.memory.read(color_index))
-        (true, self.memory.read(color_index))
+        (patt_pair != 0, self.memory.read(color_index))
     }
 
     fn run_oam_dma(&mut self, data: u8) {

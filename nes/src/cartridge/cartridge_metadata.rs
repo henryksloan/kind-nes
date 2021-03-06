@@ -95,21 +95,22 @@ impl CartridgeMetadata {
     }
 }
 
-enum Mirroring {
+#[derive(Copy, Clone)]
+pub enum Mirroring {
     Horizontal,
     Vertical,
     SingleScreen,
     FourScreen,
 }
 
-enum ConsoleType {
+pub enum ConsoleType {
     NESFamicom,
     VsSystem,
     Playchoice10,
     Extended,
 }
 
-enum ClockTiming {
+pub enum ClockTiming {
     NTSC,
     PAL,
     MultiRegion,

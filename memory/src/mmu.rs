@@ -59,7 +59,7 @@ impl MMU {
     }
 
     pub fn map_ram(&mut self, start: u16, end: u16) {
-        self.map_ram_mirrored(start, end, end - start);
+        self.map_ram_mirrored(start, end, end - start + 1);
     }
 
     fn access(&self, addr: u16) -> Result<(u16, &Rc<RefCell<dyn Memory>>), &'static str> {
