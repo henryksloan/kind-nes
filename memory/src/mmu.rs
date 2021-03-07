@@ -46,7 +46,7 @@ impl MMU {
     }
 
     pub fn map(&mut self, start: u16, end: u16, memory: Rc<RefCell<dyn Memory>>) {
-        self.map_mirrored(start, end, end - start, memory);
+        self.map_mirrored(start, end, end - start + 1, memory);
     }
 
     pub fn map_ram_mirrored(&mut self, start: u16, end: u16, size: u16) {
@@ -59,7 +59,7 @@ impl MMU {
     }
 
     pub fn map_ram(&mut self, start: u16, end: u16) {
-        self.map_ram_mirrored(start, end, end - start);
+        self.map_ram_mirrored(start, end, end - start + 1);
     }
 
     fn access(&self, addr: u16) -> Result<(u16, &Rc<RefCell<dyn Memory>>), &'static str> {

@@ -1,5 +1,6 @@
 pub mod mmu;
 pub mod ram;
+pub mod rom;
 
 pub trait Memory {
     fn read(&mut self, addr: u16) -> u8;

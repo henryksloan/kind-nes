@@ -34,6 +34,7 @@ pub struct CPU {
     pc: u16, // Program counter
     wait_cycles: u32,
     cycles: usize,
+    pub log: bool,
 
     memory: Box<dyn Memory>,
 }
@@ -49,6 +50,7 @@ impl CPU {
             pc: 0,
             wait_cycles: 0,
             cycles: 0,
+            log: false,
             memory,
         }
     }
@@ -71,16 +73,20 @@ impl CPU {
             self.cycles += 1;
             None
         } else {
-            Some(self.step())
+            self.step()
         }
     }
 
-    pub fn step(&mut self) -> String {
+    pub fn step(&mut self) -> Option<String> {
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS
             .get(&opcode)
             .expect("Unimplemented instruction");
-        let log = self.format_step(op);
+        let log = if self.log {
+            Some(self.format_step(op))
+        } else {
+            None
+        };
         self.pc += 1;
 
         self.wait_cycles = 0;
@@ -93,6 +99,12 @@ impl CPU {
         self.wait_cycles += op.cycles;
 
         log
+    }
+
+    pub fn nmi(&mut self) {
+        self.stack_push_u16(self.pc);
+        self.stack_push(self.p.bits());
+        self.pc = self.memory.read_u16(NMI_VEC);
     }
 
     fn format_step(&self, op: &Instruction) -> String {
