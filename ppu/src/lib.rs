@@ -50,7 +50,14 @@ impl PPU {
     }
 
     pub fn reset(&mut self) {
-        // todo!()
+        self.registers.reset();
+        self.scan = Scan::new();
+        self.bg_data = BackgroundData::new();
+        self.dma_option = None;
+        self.dma_request = None;
+        self.framebuffer = [[0; 256]; 240];
+        self.nmi = false;
+        self.frame_ready = false;
     }
 
     pub fn tick(&mut self) {
@@ -297,8 +304,6 @@ impl Memory for PPU {
                 self.registers
                     .ppustatus
                     .remove(StatusRegister::VBLANK_STARTED);
-                // TODO: NMI
-                // self.nmi = true;
 
                 high_three | (self.registers.bus_latch & 0b000_11111)
             }
@@ -377,8 +382,7 @@ impl Memory for PPU {
                     .ppustatus
                     .contains(StatusRegister::VBLANK_STARTED);
                 if vblank_set && nmi_rising_edge {
-                    // TODO: NMI
-                    // self.nmi = true;
+                    self.nmi = true;
                 }
                 self.registers
                     .temp_addr
