@@ -47,6 +47,7 @@ fn nestest_cpu() {
     );
     cpu_mmu.write_u16(0xFFFC, 0xC000);
     let mut cpu = CPU::new(Box::from(cpu_mmu));
+    cpu.log = true;
     cpu.reset();
 
     let log_file = File::open(log_path).unwrap();
