@@ -94,6 +94,22 @@ impl ControlRegister {
             0x0000
         }
     }
+
+    pub fn get_sprite_patt_base(&self) -> u16 {
+        if self.contains(Self::SPRITE_PATT_ADDR) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
+
+    pub fn get_sprite_height(&self) -> u16 {
+        if self.contains(Self::SPRITE_HEIGHT) {
+            16
+        } else {
+            8
+        }
+    }
 }
 
 bitflags! {
