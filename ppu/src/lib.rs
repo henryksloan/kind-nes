@@ -201,6 +201,7 @@ impl PPU {
             }
             6 => {
                 // Read pattern data from the upper bit plane of the pattern table
+                // TODO: This could be stored so as to avoid computing it twice
                 let patt_addr = self.registers.ppuctrl.get_patt_base()
                     | ((self.bg_data.latch.nt_byte as u16) << 4)
                     | self.registers.curr_addr.get(vram_addr::FINE_Y);
@@ -240,10 +241,24 @@ impl PPU {
             4 => {
                 // Pattern table tile low
                 // TODO: This
+                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
+                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
+                    | y;
+                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
+                self.spr_data.registers[spr_num as usize].patt_shift[0] =
+                    self.memory.read(patt_addr + 0);
             }
             6 => {
                 // Pattern table tile high
                 // TODO: This
+                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
+                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
+                    | y;
+                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
+                self.spr_data.registers[spr_num as usize].patt_shift[1] =
+                    self.memory.read(patt_addr + 8);
             }
             _ => {} // Reads take two cycles, so we just skip the odd ones
         }
@@ -312,7 +327,17 @@ impl PPU {
         for sprite_registers in &self.spr_data.registers {
             if sprite_registers.x_counter as u16 <= (self.scan.cycle - 2)
                 && (self.scan.cycle - 2) <= (sprite_registers.x_counter as u16 + 7) {
-                return (true, 0x55);
+                let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 0;
+                let mut w = (self.scan.cycle - 2) - (sprite_registers.x_counter as u16);
+                if flip_h {
+                    w = 7 - w;
+                }
+                let pred = (((sprite_registers.patt_shift[1] >> w) & 1) == 1) || (((sprite_registers.patt_shift[0] >> w) & 1) == 1);
+                let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1) | (((sprite_registers.patt_shift[0] >> w) & 1));
+                let color_index = 0x3F10 // Palette RAM base = universal background color
+                    | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
+                    | (patt_pair as u16); // "Pixel value from tile data"
+                return (pred, self.memory.read(color_index));
             }
         }
 
