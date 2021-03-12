@@ -245,7 +245,6 @@ impl PPU {
                 let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
                     | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
                     | y;
-                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
                 self.spr_data.registers[spr_num as usize].patt_shift[0] =
                     self.memory.read(patt_addr + 0);
             }
@@ -256,7 +255,6 @@ impl PPU {
                 let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
                     | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
                     | y;
-                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
                 self.spr_data.registers[spr_num as usize].patt_shift[1] =
                     self.memory.read(patt_addr + 8);
             }
@@ -275,7 +273,8 @@ impl PPU {
             let y = self.oam.read(4 * oam_spr) as u16;
             if y <= self.scan.line && self.scan.line <= (y + 7) {
                 for j in 0..4 {
-                    self.oam2.write(n_found * 4 + j, self.oam.read(oam_spr * 4 + j));
+                    self.oam2
+                        .write(n_found * 4 + j, self.oam.read(oam_spr * 4 + j));
                 }
                 n_found += 1;
             }
@@ -326,13 +325,15 @@ impl PPU {
 
         for sprite_registers in &self.spr_data.registers {
             if sprite_registers.x_counter as u16 <= (self.scan.cycle - 2)
-                && (self.scan.cycle - 2) <= (sprite_registers.x_counter as u16 + 7) {
+                && (self.scan.cycle - 2) <= (sprite_registers.x_counter as u16 + 7)
+            {
                 let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 0;
                 let mut w = (self.scan.cycle - 2) - (sprite_registers.x_counter as u16);
                 if flip_h {
                     w = 7 - w;
                 }
-                let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1) | (((sprite_registers.patt_shift[0] >> w) & 1));
+                let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1)
+                    | ((sprite_registers.patt_shift[0] >> w) & 1);
                 if patt_pair != 0 {
                     let color_index = 0x3F10 // Palette RAM base = universal background color
                         | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
