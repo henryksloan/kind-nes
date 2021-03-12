@@ -4,12 +4,14 @@ extern crate bitflags;
 mod background_data;
 mod registers;
 mod scan;
+mod sprite_data;
 
 use background_data::BackgroundData;
 use memory::ram::RAM;
 use memory::Memory;
 use registers::*;
 use scan::Scan;
+use sprite_data::SpriteData;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,6 +20,7 @@ pub struct PPU {
     registers: PPURegisters,
     scan: Scan,
     bg_data: BackgroundData,
+    spr_data: SpriteData,
     memory: Box<dyn Memory>,
     oam: RAM,
     oam2: RAM,
@@ -34,6 +37,7 @@ impl PPU {
             registers: PPURegisters::new(),
             scan: Scan::new(),
             bg_data: BackgroundData::new(),
+            spr_data: SpriteData::new(),
             memory,
             oam: RAM::new(0x100, 0),
             oam2: RAM::new(0x20, 0),
@@ -53,7 +57,7 @@ impl PPU {
         self.registers.reset();
         self.scan = Scan::new();
         self.bg_data = BackgroundData::new();
-        self.dma_option = None;
+        self.spr_data = SpriteData::new();
         self.dma_request = None;
         self.framebuffer = [[0; 256]; 240];
         self.nmi = false;
@@ -81,7 +85,7 @@ impl PPU {
             }
 
             if self.scan.on_spr_fetch_cycle() {
-                self.spr_fetch((self.scan.cycle - 1) % 8);
+                self.spr_fetch((self.scan.cycle - 257) / 8, (self.scan.cycle - 1) % 8);
             }
         }
 
@@ -89,14 +93,22 @@ impl PPU {
         if self.scan.on_visible_line() {
             if self.scan.on_oam2_clear_cycle() {
                 if (self.scan.cycle - 1) % 2 == 0 {
-                    self.oam2.write(self.scan.cycle / 2, 0xFF);
+                    self.oam2.write((self.scan.cycle - 1) / 2, 0xFF);
                 }
             } else if self.scan.on_spr_eval_cycle() {
+                if self.scan.cycle == 65 {
+                    self.spr_data.reset();
+                }
                 self.spr_eval((self.scan.cycle % 2) == 1);
             }
 
             if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
-                let (pixel_on, color) = self.get_bg_pixel();
+                let (mut pixel_on, mut color) = self.get_bg_pixel();
+                let (spr_pixel_on, spr_color) = self.get_spr_pixel();
+                if spr_pixel_on {
+                    pixel_on = true;
+                    color = spr_color;
+                }
                 let x = (self.scan.cycle - 1) as usize;
                 let y = self.scan.line as usize;
                 self.framebuffer[y][x] = if pixel_on {
@@ -128,6 +140,8 @@ impl PPU {
                 }
                 self.frame_ready = true;
             } else if self.scan.line == 261 {
+                self.spr_data.spr_num = 0;
+                self.spr_data.oam2_index = 0;
                 self.registers.ppustatus.clear();
             }
         }
@@ -187,6 +201,7 @@ impl PPU {
             }
             6 => {
                 // Read pattern data from the upper bit plane of the pattern table
+                // TODO: This could be stored so as to avoid computing it twice
                 let patt_addr = self.registers.ppuctrl.get_patt_base()
                     | ((self.bg_data.latch.nt_byte as u16) << 4)
                     | self.registers.curr_addr.get(vram_addr::FINE_Y);
@@ -209,12 +224,62 @@ impl PPU {
         }
     }
 
-    fn spr_fetch(&mut self, cycles_into_tile: u16) {
-        // todo!()
+    fn spr_fetch(&mut self, spr_num: u16, cycles_into_tile: u16) {
+        // https://wiki.nesdev.com/w/index.php/PPU_rendering#Cycles_257-320
+        match cycles_into_tile {
+            0 => {
+                // Garbage nametable byte
+            }
+            2 => {
+                self.spr_data.registers[spr_num as usize].attr_latch =
+                    self.oam2.read(4 * spr_num + 2);
+            }
+            3 => {
+                self.spr_data.registers[spr_num as usize].x_counter =
+                    self.oam2.read(4 * spr_num + 3);
+            }
+            4 => {
+                // Pattern table tile low
+                // TODO: This
+                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
+                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
+                    | y;
+                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
+                self.spr_data.registers[spr_num as usize].patt_shift[0] =
+                    self.memory.read(patt_addr + 0);
+            }
+            6 => {
+                // Pattern table tile high
+                // TODO: This
+                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
+                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
+                    | y;
+                    // | self.registers.curr_addr.get(vram_addr::FINE_Y);
+                self.spr_data.registers[spr_num as usize].patt_shift[1] =
+                    self.memory.read(patt_addr + 8);
+            }
+            _ => {} // Reads take two cycles, so we just skip the odd ones
+        }
     }
 
     fn spr_eval(&mut self, odd_cycle: bool) {
-        // todo!()
+        // TODO: This doesn't emulate hardware at all
+        // TODO: It should be like a state machine, like https://wiki.nesdev.com/w/index.php/PPU_sprite_evaluation
+        let mut n_found = 0;
+        for oam_spr in 0..64 {
+            if n_found == 8 {
+                break;
+            }
+            let y = self.oam.read(4 * oam_spr) as u16;
+            if y <= self.scan.line && self.scan.line <= (y + 7) {
+                for j in 0..4 {
+                    self.oam2.write(n_found * 4 + j, self.oam.read(oam_spr * 4 + j));
+                }
+                n_found += 1;
+            }
+        }
     }
 
     fn get_bg_pixel(&mut self) -> (bool, u8) {
@@ -252,6 +317,34 @@ impl PPU {
         (patt_pair != 0, self.memory.read(color_index))
     }
 
+    fn get_spr_pixel(&mut self) -> (bool, u8) {
+        // https://wiki.nesdev.com/w/index.php/PPU_rendering#Preface
+        // TODO: Implement the actual pattern behavior
+        if self.scan.cycle == 1 {
+            return (false, 0x00);
+        }
+
+        for sprite_registers in &self.spr_data.registers {
+            if sprite_registers.x_counter as u16 <= (self.scan.cycle - 2)
+                && (self.scan.cycle - 2) <= (sprite_registers.x_counter as u16 + 7) {
+                let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 0;
+                let mut w = (self.scan.cycle - 2) - (sprite_registers.x_counter as u16);
+                if flip_h {
+                    w = 7 - w;
+                }
+                let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1) | (((sprite_registers.patt_shift[0] >> w) & 1));
+                if patt_pair != 0 {
+                    let color_index = 0x3F10 // Palette RAM base = universal background color
+                        | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
+                        | (patt_pair as u16); // "Pixel value from tile data"
+                    return (true, self.memory.read(color_index));
+                }
+            }
+        }
+
+        (false, 0x00)
+    }
+
     fn run_oam_dma(&mut self, data: u8) {
         if self.dma_option.is_none() {
             return;
@@ -261,7 +354,7 @@ impl PPU {
         // "1 wait state cycle while waiting for writes to complete,
         self.cpu_cycle();
 
-        // +1 if on an odd CPU cycle,
+        // // +1 if on an odd CPU cycle,
         if ((self.scan.total_cycles / 3) % 2) == 1 {
             self.cpu_cycle();
         }
@@ -277,8 +370,10 @@ impl PPU {
                 .read(base + i);
             self.cpu_cycle(); // Read takes 1 CPU cycle
 
-            self.oam.write(self.registers.oamaddr as u16, dma_val);
-            self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
+            // TODO: I think this should be oamaddr, but it has to be reset at some point
+            self.oam.write(i, dma_val);
+            // self.oam.write(self.registers.oamaddr as u16, dma_val);
+            // self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
             self.cpu_cycle(); // Write takes another
         }
     }

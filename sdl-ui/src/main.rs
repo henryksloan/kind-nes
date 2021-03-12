@@ -66,14 +66,16 @@ fn main() {
     loop {
         nes.tick();
 
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => std::process::exit(0),
-                _ => {}
+        if frame_count % 10 == 0 { // Temporary fix for slow event poll
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Escape),
+                        ..
+                    } => std::process::exit(0),
+                    _ => {}
+                }
             }
         }
 
