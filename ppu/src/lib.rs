@@ -332,12 +332,13 @@ impl PPU {
                 if flip_h {
                     w = 7 - w;
                 }
-                let pred = (((sprite_registers.patt_shift[1] >> w) & 1) == 1) || (((sprite_registers.patt_shift[0] >> w) & 1) == 1);
                 let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1) | (((sprite_registers.patt_shift[0] >> w) & 1));
-                let color_index = 0x3F10 // Palette RAM base = universal background color
-                    | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
-                    | (patt_pair as u16); // "Pixel value from tile data"
-                return (pred, self.memory.read(color_index));
+                if patt_pair != 0 {
+                    let color_index = 0x3F10 // Palette RAM base = universal background color
+                        | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
+                        | (patt_pair as u16); // "Pixel value from tile data"
+                    return (true, self.memory.read(color_index));
+                }
             }
         }
 
