@@ -105,6 +105,10 @@ impl NES {
         }
     }
 
+    pub fn get_shift_strobe(&self) -> bool {
+        self.joy1.borrow().shift_strobe
+    }
+
     pub fn try_fill_controller_shift(&mut self, val: u8) {
         let mut joy1 = self.joy1.borrow_mut();
         if joy1.shift_strobe {

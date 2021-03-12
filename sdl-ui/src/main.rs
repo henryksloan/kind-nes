@@ -75,18 +75,13 @@ fn main() {
     let frames_per_rate_check = 60;
     let checks_per_rate_report = 2;
     let get_fps = |micros| (1f32 / ((micros / frames_per_rate_check) as f32 * 0.000001)) as u32;
+
+    let mut cycle_interrupt_timer = 1; // Safety check in case controller polling hangs
+    let cycles_per_interrupt = 50_000;
     loop {
-        let mut controller_byte = 0;
-        for scancode in &controls {
-            let bit = event_pump.keyboard_state().is_scancode_pressed(*scancode) as u8;
-            controller_byte <<= 1;
-            controller_byte |= bit;
-        }
-        nes.try_fill_controller_shift(controller_byte);
         nes.tick();
 
-        if frame_count % 7 == 0 {
-            // Temporary fix for slow event poll
+        if nes.get_shift_strobe() || cycle_interrupt_timer == 0 {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. }
@@ -97,6 +92,15 @@ fn main() {
                     _ => {}
                 }
             }
+
+            let mut controller_byte = 0;
+            let kb_state = event_pump.keyboard_state();
+            for scancode in &controls {
+                let bit = kb_state.is_scancode_pressed(*scancode) as u8;
+                controller_byte <<= 1;
+                controller_byte |= bit;
+            }
+            nes.try_fill_controller_shift(controller_byte);
         }
 
         if let Some(framebuffer) = nes.get_new_frame() {
@@ -138,5 +142,7 @@ fn main() {
                 canvas.present();
             }
         }
+
+        cycle_interrupt_timer = (cycle_interrupt_timer + 1) % cycles_per_interrupt;
     }
 }
