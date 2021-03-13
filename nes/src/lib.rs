@@ -1,8 +1,15 @@
 mod cartridge;
+mod controllers;
+mod cpu_mapped_registers;
 mod nametable_memory;
 
 use crate::cartridge::Cartridge;
+use crate::controllers::Controller;
+use crate::controllers::NoController;
+use crate::controllers::StandardController;
+use crate::cpu_mapped_registers::CPUMappedRegisters;
 use crate::nametable_memory::NametableMemory;
+
 use cpu::CPU;
 use memory::mmu::MMU;
 use ppu::PPU;
@@ -14,11 +21,15 @@ pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
     cart: Rc<RefCell<Cartridge>>,
+    joy1: Rc<RefCell<dyn Controller>>,
+    joy2: Rc<RefCell<dyn Controller>>,
 }
 
 impl NES {
     pub fn new() -> Self {
         let cart = Rc::new(RefCell::new(Cartridge::new()));
+        let joy1 = Rc::new(RefCell::new(StandardController::new(true)));
+        let joy2 = Rc::new(RefCell::new(NoController::new()));
 
         // https://wiki.nesdev.com/w/index.php/PPU_memory_map
         let mut ppu_mmu = MMU::new();
@@ -31,22 +42,34 @@ impl NES {
         ppu_mmu.map_ram_mirrored(0x3F00, 0x3FFF, 0x0020); // Palette RAM indices
         let ppu = Rc::new(RefCell::new(PPU::new(Box::from(ppu_mmu))));
 
+        let cpu_mapped_registers = Rc::new(RefCell::new(CPUMappedRegisters::new(
+            ppu.clone(),
+            ppu.clone(), // TODO: This should be APU
+            joy1.clone(),
+            joy2.clone(),
+        )));
+
         // https://wiki.nesdev.com/w/index.php/CPU_memory_map
         let mut cpu_mmu = MMU::new();
         cpu_mmu.map_ram_mirrored(0x0000, 0x1FFF, 0x0800);
         cpu_mmu.map_mirrored(0x2000, 0x3FFF, 0x0008, ppu.clone()); // PPU registers
-        cpu_mmu.map(0x4014, 0x4014, ppu.clone()); // OAMDMA
-                                                  // cpu_mmu.map(&apu_io_reg, 0x4000, 0x401F);
+        cpu_mmu.map(0x4000, 0x401F, cpu_mapped_registers.clone()); // NES APU and I/O registers
         cpu_mmu.map(0x4020, 0xFFFF, cart.clone());
         let cpu = Rc::new(RefCell::new(CPU::new(Box::from(cpu_mmu))));
         cpu.borrow_mut().reset();
 
         ppu.borrow_mut().set_dma(cpu.clone());
 
-        Self { cpu, ppu, cart }
+        Self {
+            cpu,
+            ppu,
+            cart,
+            joy1,
+            joy2,
+        }
     }
 
-    /// Load a rom from a file and reset the system, returning whether it succeeded
+    /// Load a ROM from a file and reset the system, returning whether it succeeded
     pub fn load_rom(&mut self, file: File) -> Result<(), &'static str> {
         match Cartridge::from_file(file) {
             Ok(new_cart) => {
@@ -81,6 +104,17 @@ impl NES {
             Some(ppu.framebuffer)
         } else {
             None
+        }
+    }
+
+    pub fn get_shift_strobe(&self) -> bool {
+        self.joy1.borrow().get_shift_strobe()
+    }
+
+    pub fn try_fill_controller_shift(&mut self, val: u8) {
+        let mut joy1 = self.joy1.borrow_mut();
+        if joy1.get_shift_strobe() {
+            joy1.set_state_shift(val);
         }
     }
 }

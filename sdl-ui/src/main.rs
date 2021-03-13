@@ -7,6 +7,7 @@ use std::process;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::keyboard::Scancode;
 use sdl2::pixels::PixelFormatEnum;
 
 const COLORS: &'static [i32] = &[
@@ -57,16 +58,30 @@ fn main() {
 
     let mut screen_buff = [0u8; 256 * 240 * 3];
 
+    let controls = vec![
+        Scancode::Right,
+        Scancode::Left,
+        Scancode::Down,
+        Scancode::Up,
+        Scancode::Return,
+        Scancode::RShift,
+        Scancode::Z,
+        Scancode::X,
+    ];
+
     use std::time::Instant;
     let mut now = Instant::now();
     let mut frame_count = 0;
     let frames_per_rate_check = 60;
     let checks_per_rate_report = 2;
     let get_fps = |micros| (1f32 / ((micros / frames_per_rate_check) as f32 * 0.000001)) as u32;
+
+    let mut cycle_interrupt_timer = 1; // Safety check in case controller polling hangs
+    let cycles_per_interrupt = 50_000;
     loop {
         nes.tick();
 
-        if frame_count % 10 == 0 { // Temporary fix for slow event poll
+        if nes.get_shift_strobe() || cycle_interrupt_timer == 0 {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. }
@@ -77,6 +92,15 @@ fn main() {
                     _ => {}
                 }
             }
+
+            let mut controller_byte = 0;
+            let kb_state = event_pump.keyboard_state();
+            for scancode in &controls {
+                let bit = kb_state.is_scancode_pressed(*scancode) as u8;
+                controller_byte <<= 1;
+                controller_byte |= bit;
+            }
+            nes.try_fill_controller_shift(controller_byte);
         }
 
         if let Some(framebuffer) = nes.get_new_frame() {
@@ -118,5 +142,7 @@ fn main() {
                 canvas.present();
             }
         }
+
+        cycle_interrupt_timer = (cycle_interrupt_timer + 1) % cycles_per_interrupt;
     }
 }
