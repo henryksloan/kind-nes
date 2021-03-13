@@ -1,3 +1,4 @@
+use crate::controllers::Controller;
 use memory::Memory;
 
 // https://wiki.nesdev.com/w/index.php/Standard_controller
@@ -14,6 +15,20 @@ impl StandardController {
             shift_strobe: false,
             state_shift: 0,
         }
+    }
+}
+
+impl Controller for StandardController {
+    fn is_controller_1(&self) -> bool {
+        self.is_controller_1
+    }
+
+    fn get_shift_strobe(&self) -> bool {
+        self.shift_strobe
+    }
+
+    fn set_state_shift(&mut self, val: u8) {
+        self.state_shift = val;
     }
 }
 

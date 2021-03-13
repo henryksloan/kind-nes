@@ -4,10 +4,12 @@ mod cpu_mapped_registers;
 mod nametable_memory;
 
 use crate::cartridge::Cartridge;
+use crate::controllers::Controller;
 use crate::controllers::NoController;
 use crate::controllers::StandardController;
 use crate::cpu_mapped_registers::CPUMappedRegisters;
 use crate::nametable_memory::NametableMemory;
+
 use cpu::CPU;
 use memory::mmu::MMU;
 use ppu::PPU;
@@ -19,8 +21,8 @@ pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
     cart: Rc<RefCell<Cartridge>>,
-    joy1: Rc<RefCell<StandardController>>, // TODO: Make these trait object Rc<RefCell<>>'s
-    joy2: Rc<RefCell<NoController>>,
+    joy1: Rc<RefCell<dyn Controller>>,
+    joy2: Rc<RefCell<dyn Controller>>,
 }
 
 impl NES {
@@ -42,7 +44,7 @@ impl NES {
 
         let cpu_mapped_registers = Rc::new(RefCell::new(CPUMappedRegisters::new(
             ppu.clone(),
-            ppu.clone(), // TODO: These PPU references should be API, JOY1, JOY2
+            ppu.clone(), // TODO: This should be APU
             joy1.clone(),
             joy2.clone(),
         )));
@@ -106,13 +108,13 @@ impl NES {
     }
 
     pub fn get_shift_strobe(&self) -> bool {
-        self.joy1.borrow().shift_strobe
+        self.joy1.borrow().get_shift_strobe()
     }
 
     pub fn try_fill_controller_shift(&mut self, val: u8) {
         let mut joy1 = self.joy1.borrow_mut();
-        if joy1.shift_strobe {
-            joy1.state_shift = val;
+        if joy1.get_shift_strobe() {
+            joy1.set_state_shift(val);
         }
     }
 }
