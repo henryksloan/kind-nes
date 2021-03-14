@@ -92,6 +92,7 @@ impl NES {
             println!("{}", log);
         }
         self.ppu.borrow_mut().cpu_cycle();
+        self.cart.borrow_mut().cycle(); // TODO:
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
             self.cpu.borrow_mut().nmi();

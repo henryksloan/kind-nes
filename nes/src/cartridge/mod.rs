@@ -7,8 +7,9 @@ use cartridge_metadata::CartridgeMetadata;
 pub use cartridge_metadata::Mirroring;
 
 mod mapper;
-use mapper::*;
-use mapper0::Mapper0;
+use mapper::Mapper;
+use mapper::Mapper0;
+use mapper::Mapper1;
 
 pub struct Cartridge {
     meta: Option<CartridgeMetadata>,
@@ -42,10 +43,12 @@ impl Cartridge {
             Err(_) => return Err("hit EOF while reading character ROM"),
         };
 
-        let mapper = Box::from(match meta.mapper_num {
-            0 => Mapper0::new(meta.n_prg_banks, meta.n_chr_banks, prg_data, chr_data),
+        let (n_prg_banks, n_chr_banks) = (meta.n_prg_banks, meta.n_chr_banks);
+        let mapper: Box<dyn Mapper> = match meta.mapper_num {
+            0 => Box::from(Mapper0::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
+            1 => Box::from(Mapper1::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
             _ => return Err("unsupported mapper"),
-        });
+        };
 
         Ok(Self {
             meta: Some(meta),
@@ -63,6 +66,18 @@ impl Cartridge {
             some_mapper.get_nametable_mirroring().unwrap_or(default)
         } else {
             default
+        }
+    }
+
+    pub fn cycle(&mut self) {
+        if let Some(some_mapper) = &mut self.mapper {
+            some_mapper.cycle();
+        }
+    }
+
+    pub fn reset(&mut self) {
+        if let Some(some_mapper) = &mut self.mapper {
+            some_mapper.reset();
         }
     }
 }

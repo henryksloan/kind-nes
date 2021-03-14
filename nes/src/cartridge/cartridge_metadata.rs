@@ -99,7 +99,8 @@ impl CartridgeMetadata {
 pub enum Mirroring {
     Horizontal,
     Vertical,
-    SingleScreen,
+    SingleScreenUpper,
+    SingleScreenLower,
     FourScreen,
 }
 
