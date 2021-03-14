@@ -89,7 +89,7 @@ impl PPU {
             }
         }
 
-        // Sprite operations that happen only on visible lines
+        // Sprite and pixel operations that happen only on visible lines
         if self.scan.on_visible_line() {
             if self.scan.on_oam2_clear_cycle() {
                 if (self.scan.cycle - 1) % 2 == 0 {
@@ -102,19 +102,24 @@ impl PPU {
                 self.spr_eval((self.scan.cycle % 2) == 1);
             }
 
-            if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
+            // Fetch pixels up until the unused NT fetches
+            if (1 <= self.scan.cycle && self.scan.cycle <= 256)
+                || (321 <= self.scan.cycle && self.scan.cycle <= 336)
+            {
                 let (mut pixel_on, mut color) = self.get_bg_pixel();
                 let (spr_pixel_on, spr_color) = self.get_spr_pixel();
                 if spr_pixel_on {
                     pixel_on = true;
                     color = spr_color;
                 }
-                let x = (self.scan.cycle - 1) as usize;
-                let y = self.scan.line as usize;
-                self.framebuffer[y][x] = if pixel_on {
-                    color
-                } else {
-                    self.memory.read(0x3F00)
+                if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
+                    let x = (self.scan.cycle - 1) as usize;
+                    let y = self.scan.line as usize;
+                    self.framebuffer[y][x] = if pixel_on {
+                        color
+                    } else {
+                        self.memory.read(0x3F00)
+                    }
                 }
             }
         }
@@ -241,7 +246,10 @@ impl PPU {
             4 => {
                 // Pattern table tile low
                 // TODO: This
-                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let y = self
+                    .scan
+                    .line
+                    .wrapping_sub(self.oam2.read(4 * spr_num + 0) as u16);
                 let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
                     | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
                     | y;
@@ -251,12 +259,15 @@ impl PPU {
             6 => {
                 // Pattern table tile high
                 // TODO: This
-                let y = self.scan.line - (self.oam2.read(4 * spr_num + 0) as u16);
+                let y = self
+                    .scan
+                    .line
+                    .wrapping_sub(self.oam2.read(4 * spr_num + 0) as u16);
                 let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
                     | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
                     | y;
                 self.spr_data.registers[spr_num as usize].patt_shift[1] =
-                    self.memory.read(patt_addr + 8);
+                    self.memory.read(patt_addr.wrapping_add(8));
             }
             _ => {} // Reads take two cycles, so we just skip the odd ones
         }

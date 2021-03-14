@@ -32,7 +32,8 @@ impl NametableMemory {
                 fix_4s = 0x2000;
                 [0, 1, 2, 3]
             }
-            Mirroring::SingleScreen => [0, 0, 0, 0],
+            Mirroring::SingleScreenUpper => [1, 1, 1, 1],
+            Mirroring::SingleScreenLower => [0, 0, 0, 0],
         };
 
         nt_mirroring[((_addr - 0x2000) / 0x400) as usize] * 0x400 + (_addr % 0x400) + fix_4s

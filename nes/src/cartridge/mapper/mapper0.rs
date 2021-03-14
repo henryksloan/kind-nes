@@ -2,6 +2,7 @@ use crate::cartridge::Mapper;
 use memory::rom::ROM;
 use memory::Memory;
 
+// https://wiki.nesdev.com/w/index.php/NROM
 pub struct Mapper0 {
     n_prg_banks: u16,
     n_chr_banks: u16,
@@ -30,12 +31,7 @@ impl Mapper0 {
 
 impl Memory for Mapper0 {
     fn read(&mut self, addr: u16) -> u8 {
-        if addr <= 0x1FFF {
-            self.chr_rom.read(addr % (self.n_chr_banks * 0x2000))
-        } else {
-            self.prg_rom
-                .read(((addr - 0x8000) % (self.n_prg_banks * 0x4000)) + 0x8000)
-        }
+        self.peek(addr)
     }
 
     fn peek(&self, addr: u16) -> u8 {
