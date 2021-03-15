@@ -6,3 +6,6 @@ members = [
     "ppu",
     "memory",
 ]
+
+# [profile.release]
+# debug = true
