@@ -7,7 +7,6 @@ mod scan;
 mod sprite_data;
 
 use background_data::BackgroundData;
-use memory::ram::RAM;
 use memory::Memory;
 use registers::*;
 use scan::Scan;
@@ -22,8 +21,8 @@ pub struct PPU {
     bg_data: BackgroundData,
     spr_data: SpriteData,
     memory: Box<dyn Memory>,
-    oam: RAM,
-    oam2: RAM,
+    oam: [u8; 0x100],
+    oam2: [u8; 0x20],
     dma_option: Option<Rc<RefCell<dyn Memory>>>,
     dma_request: Option<u8>,
     pub framebuffer: [[u8; 256]; 240],
@@ -39,8 +38,8 @@ impl PPU {
             bg_data: BackgroundData::new(),
             spr_data: SpriteData::new(),
             memory,
-            oam: RAM::new(0x100, 0),
-            oam2: RAM::new(0x20, 0),
+            oam: [0u8; 0x100],
+            oam2: [0u8; 0x20],
             dma_option: None,
             dma_request: None,
             framebuffer: [[0; 256]; 240],
@@ -85,7 +84,7 @@ impl PPU {
             }
 
             if self.scan.on_spr_fetch_cycle() {
-                self.spr_fetch((self.scan.cycle - 257) / 8, (self.scan.cycle - 1) % 8);
+                self.spr_fetch((self.scan.cycle - 256) / 8, (self.scan.cycle - 1) % 8);
             }
         }
 
@@ -93,7 +92,7 @@ impl PPU {
         if self.scan.on_visible_line() {
             if self.scan.on_oam2_clear_cycle() {
                 if (self.scan.cycle - 1) % 2 == 0 {
-                    self.oam2.write((self.scan.cycle - 1) / 2, 0xFF);
+                    self.oam2[((self.scan.cycle - 1) as usize) / 2] = 0xFF;
                 }
             } else if self.scan.on_spr_eval_cycle() {
                 if self.scan.cycle == 65 {
@@ -107,8 +106,23 @@ impl PPU {
                 || (321 <= self.scan.cycle && self.scan.cycle <= 336)
             {
                 let (mut pixel_on, mut color) = self.get_bg_pixel();
-                let (spr_pixel_on, spr_color) = self.get_spr_pixel();
+                let (spr_pixel_on, spr_color, spr_zero) = self.get_spr_pixel();
                 if spr_pixel_on {
+                    if pixel_on
+                        && spr_zero
+                        && self.registers.ppumask.is_rendering()
+                        && (self.scan.cycle != 256)
+                        && !((1 <= self.scan.cycle && self.scan.cycle <= 8)
+                            && (!self.registers.ppumask.contains(MaskRegister::BACK_LEFT_COL)
+                                || !self
+                                    .registers
+                                    .ppumask
+                                    .contains(MaskRegister::SPRITE_LEFT_COL)))
+                    {
+                        self.registers
+                            .ppustatus
+                            .insert(StatusRegister::SPRITE_ZERO_HIT);
+                    }
                     pixel_on = true;
                     color = spr_color;
                 }
@@ -203,16 +217,11 @@ impl PPU {
                     | self.registers.curr_addr.get(vram_addr::FINE_Y); // "the row number within a tile"
 
                 self.bg_data.latch.patt_lo = self.memory.read(patt_addr + 0);
+                self.bg_data.latch.patt_hi = self.memory.read(patt_addr + 8);
             }
             6 => {
                 // Read pattern data from the upper bit plane of the pattern table
-                // TODO: This could be stored so as to avoid computing it twice
-                let patt_addr = self.registers.ppuctrl.get_patt_base()
-                    | ((self.bg_data.latch.nt_byte as u16) << 4)
-                    | self.registers.curr_addr.get(vram_addr::FINE_Y);
-
-                // Same as lower bit, but adding 0b1000 selects the upper table plane
-                self.bg_data.latch.patt_hi = self.memory.read(patt_addr + 8);
+                // (Performed alongside pattern low to avoid repeating work)
             }
             7 => {
                 if self.registers.ppumask.is_rendering() {
@@ -236,38 +245,65 @@ impl PPU {
                 // Garbage nametable byte
             }
             2 => {
+                self.spr_data.registers[spr_num as usize].num = spr_num;
                 self.spr_data.registers[spr_num as usize].attr_latch =
-                    self.oam2.read(4 * spr_num + 2);
+                    self.oam2[4 * (spr_num as usize) + 2];
             }
             3 => {
                 self.spr_data.registers[spr_num as usize].x_counter =
-                    self.oam2.read(4 * spr_num + 3);
+                    self.oam2[4 * (spr_num as usize) + 3];
             }
             4 => {
                 // Pattern table tile low
-                // TODO: This
-                let y = self
+                let mut y = self
                     .scan
                     .line
-                    .wrapping_sub(self.oam2.read(4 * spr_num + 0) as u16);
-                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
-                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
-                    | y;
+                    .wrapping_sub(self.oam2[4 * (spr_num as usize) + 0] as u16);
+                let mut any_good = false;
+                for i in 0..4 {
+                    if self.oam2[4 * (spr_num as usize) + i] != 0xFF {
+                        any_good = true;
+                        break;
+                    }
+                }
+                if !any_good {
+                    y = 0;
+                }
+
+                let mut tile_index = self.oam2[4 * (spr_num as usize) + 1] as u16;
+                let base = if self
+                    .registers
+                    .ppuctrl
+                    .contains(ControlRegister::SPRITE_HEIGHT)
+                {
+                    0x1000 * (tile_index & 1)
+                } else {
+                    self.registers.ppuctrl.get_sprite_patt_base()
+                };
+
+                let flip_v = self.oam2[4 * (spr_num as usize) + 2] >> 7 == 1;
+                if flip_v {
+                    y = self.registers.ppuctrl.get_sprite_height() - 1 - y;
+                }
+                if self
+                    .registers
+                    .ppuctrl
+                    .contains(ControlRegister::SPRITE_HEIGHT)
+                {
+                    tile_index &= 0b1111_1110;
+                    if y > 7 {
+                        tile_index += 1;
+                        y -= 8;
+                    }
+                }
+                let patt_addr = base | (tile_index << 4) | y;
                 self.spr_data.registers[spr_num as usize].patt_shift[0] =
                     self.memory.read(patt_addr + 0);
-            }
-            6 => {
-                // Pattern table tile high
-                // TODO: This
-                let y = self
-                    .scan
-                    .line
-                    .wrapping_sub(self.oam2.read(4 * spr_num + 0) as u16);
-                let patt_addr = self.registers.ppuctrl.get_sprite_patt_base()
-                    | ((self.oam2.read(4 * spr_num + 1) as u16) << 4)
-                    | y;
                 self.spr_data.registers[spr_num as usize].patt_shift[1] =
                     self.memory.read(patt_addr.wrapping_add(8));
+            }
+            6 => {
+                // Pattern table tile high (fetched alongside low to avoid repeating work)
             }
             _ => {} // Reads take two cycles, so we just skip the odd ones
         }
@@ -281,11 +317,12 @@ impl PPU {
             if n_found == 8 {
                 break;
             }
-            let y = self.oam.read(4 * oam_spr) as u16;
-            if y <= self.scan.line && self.scan.line <= (y + 7) {
+            let y = self.oam[4 * oam_spr as usize] as u16;
+            if y <= self.scan.line
+                && self.scan.line < y.wrapping_add(self.registers.ppuctrl.get_sprite_height())
+            {
                 for j in 0..4 {
-                    self.oam2
-                        .write(n_found * 4 + j, self.oam.read(oam_spr * 4 + j));
+                    self.oam2[n_found * 4 + j] = self.oam[oam_spr as usize * 4 + j];
                 }
                 n_found += 1;
             }
@@ -327,19 +364,18 @@ impl PPU {
         (patt_pair != 0, self.memory.read(color_index))
     }
 
-    fn get_spr_pixel(&mut self) -> (bool, u8) {
+    fn get_spr_pixel(&mut self) -> (bool, u8, bool) {
         // https://wiki.nesdev.com/w/index.php/PPU_rendering#Preface
-        // TODO: Implement the actual pattern behavior
         if self.scan.cycle == 1 {
-            return (false, 0x00);
+            return (false, 0x00, false);
         }
 
         for sprite_registers in &self.spr_data.registers {
-            if sprite_registers.x_counter as u16 <= (self.scan.cycle - 2)
-                && (self.scan.cycle - 2) <= (sprite_registers.x_counter as u16 + 7)
+            if sprite_registers.x_counter as u16 <= (self.scan.cycle - 1)
+                && (self.scan.cycle - 1) <= (sprite_registers.x_counter as u16 + 7)
             {
                 let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 0;
-                let mut w = (self.scan.cycle - 2) - (sprite_registers.x_counter as u16);
+                let mut w = (self.scan.cycle - 1) - (sprite_registers.x_counter as u16);
                 if flip_h {
                     w = 7 - w;
                 }
@@ -349,12 +385,16 @@ impl PPU {
                     let color_index = 0x3F10 // Palette RAM base = universal background color
                         | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
                         | (patt_pair as u16); // "Pixel value from tile data"
-                    return (true, self.memory.read(color_index));
+                    return (
+                        true,
+                        self.memory.read(color_index),
+                        sprite_registers.num == 0,
+                    );
                 }
             }
         }
 
-        (false, 0x00)
+        (false, 0x00, false)
     }
 
     fn run_oam_dma(&mut self, data: u8) {
@@ -383,7 +423,7 @@ impl PPU {
             self.cpu_cycle(); // Read takes 1 CPU cycle
 
             // TODO: I think this should be oamaddr, but it has to be reset at some point
-            self.oam.write(i, dma_val);
+            self.oam[i as usize] = dma_val;
             // self.oam.write(self.registers.oamaddr as u16, dma_val);
             // self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
             self.cpu_cycle(); // Write takes another
@@ -421,7 +461,7 @@ impl Memory for PPU {
                 if self.scan.on_visible_line() && self.scan.on_oam2_clear_cycle() {
                     0xFF
                 } else {
-                    self.oam.read(self.registers.oamaddr as u16)
+                    self.oam[self.registers.oamaddr as usize]
                 }
             }
             register_addrs::PPUDATA => {
@@ -460,7 +500,7 @@ impl Memory for PPU {
                 if self.scan.on_visible_line() && self.scan.on_oam2_clear_cycle() {
                     0xFF
                 } else {
-                    self.oam.peek(self.registers.oamaddr as u16)
+                    self.oam[self.registers.oamaddr as usize]
                 }
             }
             register_addrs::PPUDATA => {
@@ -498,7 +538,7 @@ impl Memory for PPU {
             register_addrs::PPUMASK => self.registers.ppumask.write(data),
             register_addrs::OAMADDR => self.registers.oamaddr = data,
             register_addrs::OAMDATA => {
-                self.oam.write(self.registers.oamaddr as u16, data);
+                self.oam[self.registers.oamaddr as usize] = data;
                 self.registers.oamaddr += self.registers.oamaddr.wrapping_add(1);
             }
             register_addrs::PPUSCROLL => {

@@ -27,6 +27,7 @@ impl SpriteData {
 
 #[derive(Clone, Copy)]
 pub struct SpriteRegisters {
+    pub num: u16,
     pub patt_shift: [u8; 2],
     pub attr_latch: u8,
     pub x_counter: u8,
@@ -35,6 +36,7 @@ pub struct SpriteRegisters {
 impl SpriteRegisters {
     pub fn new() -> Self {
         Self {
+            num: 0,
             patt_shift: [0; 2],
             attr_latch: 0,
             x_counter: 0,
