@@ -114,8 +114,8 @@ lazy_static! {
         add("*ARR", vec![(0x6B, IMM, 2)]);
         add("*SAX", vec![(0x83, INX, 6), (0x87, ZER, 3), (0x8F, ABS, 4), (0x97, ZEY, 4)]);
         add("*SBC", vec![(0xEB, IMM, 2)]);
-        add("*LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAF, ABS, 4), (0xB3, INY, 5),
-                        (0xB7, ZEY, 4), (0xBF, ABY, 4)]);
+        add("*LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAB, IMM, 4), (0xAF, ABS, 4),
+                        (0xB3, INY, 5), (0xB7, ZEY, 4), (0xBF, ABY, 4)]);
         add("*LAS", vec![(0xBB, ABY, 4)]);
         add("*DCP", vec![(0xC3, INX, 8), (0xC7, ZER, 5), (0xCF, ABS, 6), (0xD3, INY, 8),
                         (0xD7, ZEX, 6), (0xDB, ABY, 7), (0xDF, ABX, 7)]);
@@ -123,6 +123,7 @@ lazy_static! {
                         (0xF7, ZEX, 6), (0xFB, ABY, 7), (0xFF, ABX, 7)]);
         add("*ANC", vec![(0x0B, IMM, 2), (0x2B, IMM, 2)]);
         add("*SHX", vec![(0x9E, ABY, 5)]);
+        add("*SHY", vec![(0x9C, ABX, 5)]);
         add("*AXA", vec![(0x93, INY, 6), (0x9F, ABX, 5)]);
         add("*AXS", vec![(0xCB, IMM, 2)]);
         map
