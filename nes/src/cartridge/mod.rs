@@ -7,9 +7,7 @@ use cartridge_metadata::CartridgeMetadata;
 pub use cartridge_metadata::Mirroring;
 
 mod mapper;
-use mapper::Mapper;
-use mapper::Mapper0;
-use mapper::Mapper1;
+use mapper::*;
 
 pub struct Cartridge {
     meta: Option<CartridgeMetadata>,
@@ -47,6 +45,8 @@ impl Cartridge {
         let mapper: Box<dyn Mapper> = match meta.mapper_num {
             0 => Box::from(Mapper0::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
             1 => Box::from(Mapper1::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
+            2 => Box::from(Mapper2::new(n_prg_banks, prg_data)),
+            3 => Box::from(Mapper3::new(n_chr_banks, prg_data, chr_data)),
             _ => return Err("unsupported mapper"),
         };
 
