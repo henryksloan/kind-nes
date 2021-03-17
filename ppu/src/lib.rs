@@ -85,7 +85,6 @@ impl PPU {
             }
 
             if self.scan.on_spr_fetch_cycle() {
-                self.registers.oamaddr = 0;
                 self.spr_fetch((self.scan.cycle - 256) / 8, (self.scan.cycle - 1) % 8);
             }
         }
@@ -112,11 +111,12 @@ impl PPU {
                 // BG registers are also shifted on 321-336, allowing the first two tiles in
                 let (mut pixel_on, mut color) = self.get_bg_pixel();
                 if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
-                    let (spr_pixel_on, spr_color, spr_zero) = self.get_spr_pixel();
+                    let (spr_pixel_on, spr_color, priority, spr_zero) = self.get_spr_pixel();
                     if spr_pixel_on {
                         if pixel_on
                             && spr_zero
-                            && self.registers.ppumask.is_rendering()
+                            && self.registers.ppumask.contains(MaskRegister::BACK_ENABLE)
+                            && self.registers.ppumask.contains(MaskRegister::SPRITE_ENABLE)
                             && (self.scan.cycle != 256)
                             && !((1 <= self.scan.cycle && self.scan.cycle <= 8)
                                 && (!self.registers.ppumask.contains(MaskRegister::BACK_LEFT_COL)
@@ -129,8 +129,11 @@ impl PPU {
                                 .ppustatus
                                 .insert(StatusRegister::SPRITE_ZERO_HIT);
                         }
-                        pixel_on = true;
-                        color = spr_color;
+
+                        if !pixel_on || priority {
+                            pixel_on = true;
+                            color = spr_color;
+                        }
                     }
                     let x = (self.scan.cycle - 1) as usize;
                     let y = self.scan.line as usize;
@@ -313,13 +316,13 @@ impl PPU {
     }
 
     fn spr_eval(&mut self, odd_cycle: bool) {
-        // TODO: Fix timing so reads only happen on odd cycles
-        /* if odd_cycle {
+        if odd_cycle {
             self.spr_data.oam_byte =
                 self.oam[4 * self.spr_data.spr_num as usize + self.spr_data.byte_num as usize];
             return;
-        } */
+        }
 
+        let mut end_cycle = true;
         self.spr_data.eval_state = match self.spr_data.eval_state {
             SpriteEvalState::CopyY => {
                 let y = self.oam[4 * self.spr_data.spr_num as usize] as u16;
@@ -349,6 +352,7 @@ impl PPU {
                 }
             }
             SpriteEvalState::IncrementN => {
+                end_cycle = false; // This state doesn't take any cycles
                 self.spr_data.spr_num = (self.spr_data.spr_num + 1) % 64;
 
                 if self.spr_data.spr_num == 0 {
@@ -398,6 +402,9 @@ impl PPU {
                 SpriteEvalState::Done
             }
         };
+        if !end_cycle {
+            self.spr_eval(odd_cycle);
+        }
     }
 
     fn get_bg_pixel(&mut self) -> (bool, u8) {
@@ -435,37 +442,48 @@ impl PPU {
         (patt_pair != 0, self.memory.read(color_index))
     }
 
-    fn get_spr_pixel(&mut self) -> (bool, u8, bool) {
+    fn get_spr_pixel(&mut self) -> (bool, u8, bool, bool) {
         // https://wiki.nesdev.com/w/index.php/PPU_rendering#Preface
-        if self.scan.cycle == 1 {
-            return (false, 0x00, false);
-        }
+        let mut pixel_option = None;
+        for sprite_registers in &mut self.spr_data.registers {
+            if sprite_registers.x_counter != 0 {
+                continue;
+            }
 
-        for sprite_registers in &self.spr_data.registers {
-            if sprite_registers.x_counter as u16 <= (self.scan.cycle - 1)
-                && (self.scan.cycle - 1) <= (sprite_registers.x_counter as u16 + 7)
-            {
-                let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 0;
-                let mut w = (self.scan.cycle - 1) - (sprite_registers.x_counter as u16);
-                if flip_h {
-                    w = 7 - w;
-                }
-                let patt_pair = (((sprite_registers.patt_shift[1] >> w) & 1) << 1)
-                    | ((sprite_registers.patt_shift[0] >> w) & 1);
-                if patt_pair != 0 {
-                    let color_index = 0x3F10 // Palette RAM base = universal background color
-                        | ((sprite_registers.attr_latch as u16) << 2) // "Palette number from attribute table"
+            let flip_h = ((sprite_registers.attr_latch >> 6) & 1) == 1;
+            let offset = if flip_h { 0 } else { 7 };
+            let patt_pair = (((sprite_registers.patt_shift[1] >> offset) & 1) << 1)
+                | ((sprite_registers.patt_shift[0] >> offset) & 1);
+
+            if flip_h {
+                sprite_registers.patt_shift[1] >>= 1;
+                sprite_registers.patt_shift[0] >>= 1;
+            } else {
+                sprite_registers.patt_shift[1] <<= 1;
+                sprite_registers.patt_shift[0] <<= 1;
+            }
+
+            if patt_pair != 0 && pixel_option.is_none() {
+                let priority = ((sprite_registers.attr_latch >> 5) & 1) == 0;
+                let color_index = 0x3f10 // Palette RAM base + sprite offset
+                        | ((sprite_registers.attr_latch as u16) << 2) // "palette number from OAM"
                         | (patt_pair as u16); // "Pixel value from tile data"
-                    return (
-                        true,
-                        self.memory.read(color_index),
-                        sprite_registers.num == 0,
-                    );
-                }
+                pixel_option = Some((
+                    true,
+                    self.memory.read(color_index),
+                    priority,
+                    sprite_registers.num == 0,
+                ));
             }
         }
 
-        (false, 0x00, false)
+        for sprite_registers in &mut self.spr_data.registers {
+            if sprite_registers.x_counter > 0 {
+                sprite_registers.x_counter -= 1;
+            }
+        }
+
+        pixel_option.unwrap_or((false, 0x00, false, false))
     }
 
     fn run_oam_dma(&mut self, data: u8) {

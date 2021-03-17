@@ -163,7 +163,7 @@ impl AddressRegister {
     }
 
     fn bitmask(mask: (u16, u16)) -> u16 {
-        ((1 << mask.1) - 1) << mask.0 // e.g. (5, 5) => 1111100000
+        ((1 << mask.1) - 1) << mask.0 // e.g. (4, 5) => 111110000
     }
 
     pub fn set(&mut self, mask: (u16, u16), val: u8) {

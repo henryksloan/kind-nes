@@ -21,7 +21,7 @@ impl NametableMemory {
     fn mirror(&self, addr: u16) -> u16 {
         // Adapted from a clever approach by daniel5151
         let mut _addr = addr;
-        if _addr > 0x3000 {
+        if _addr >= 0x3000 {
             _addr -= 0x1000;
         }
         let mut fix_4s = 0;

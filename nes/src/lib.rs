@@ -41,7 +41,6 @@ impl NES {
             0x3EFF,
             Rc::new(RefCell::new(NametableMemory::new(cart.clone()))),
         );
-        // ppu_mmu.map_ram_mirrored(0x3F00, 0x3FFF, 0x0020); // Palette RAM indices
         ppu_mmu.map(0x3F00, 0x3FFF, Rc::new(RefCell::new(PaletteRAM::new()))); // Palette RAM indices
         let ppu = Rc::new(RefCell::new(PPU::new(Box::from(ppu_mmu))));
 
