@@ -4,6 +4,8 @@ use nes::NES;
 use std::env;
 use std::fs::File;
 use std::process;
+use std::thread;
+use std::time;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -48,8 +50,9 @@ fn main() {
         .unwrap();
 
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    // let mut canvas = window.into_canvas().build().unwrap();
     canvas.set_scale(3.0, 3.0).unwrap();
+    let mut event_pump = sdl_context.event_pump().unwrap();
 
     let creator = canvas.texture_creator();
     let mut texture = creator
@@ -69,8 +72,7 @@ fn main() {
         Scancode::X,
     ];
 
-    use std::time::Instant;
-    let mut now = Instant::now();
+    let mut now = time::Instant::now();
     let mut frame_count = 0;
     let frames_per_rate_check = 60;
     let checks_per_rate_report = 2;
@@ -78,6 +80,8 @@ fn main() {
 
     let mut cycle_interrupt_timer = 1; // Safety check in case controller polling hangs
     let cycles_per_interrupt = 50_000;
+
+    let mut fps_timer = time::Instant::now();
     loop {
         nes.tick();
 
@@ -113,7 +117,7 @@ fn main() {
                         )
                         .unwrap();
                 }
-                now = Instant::now();
+                now = time::Instant::now();
             }
             frame_count += 1;
 
@@ -141,6 +145,12 @@ fn main() {
                 canvas.copy(&texture, None, None).unwrap();
                 canvas.present();
             }
+
+            let elapsed = fps_timer.elapsed();
+            if elapsed < time::Duration::from_millis(16) {
+                thread::sleep(time::Duration::from_millis(16) - elapsed);
+            }
+            fps_timer = time::Instant::now();
         }
 
         cycle_interrupt_timer = (cycle_interrupt_timer + 1) % cycles_per_interrupt;

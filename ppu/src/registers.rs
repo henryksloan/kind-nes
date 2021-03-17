@@ -3,8 +3,8 @@ pub mod register_addrs {
     pub const PPUCTRL: u16 = 0x2000;
     pub const PPUMASK: u16 = 0x2001;
     pub const PPUSTATUS: u16 = 0x2002;
-    pub const OAMDATA: u16 = 0x2003;
-    pub const OAMADDR: u16 = 0x2004;
+    pub const OAMADDR: u16 = 0x2003;
+    pub const OAMDATA: u16 = 0x2004;
     pub const PPUSCROLL: u16 = 0x2005;
     pub const PPUADDR: u16 = 0x2006;
     pub const PPUDATA: u16 = 0x2007;
@@ -163,7 +163,7 @@ impl AddressRegister {
     }
 
     fn bitmask(mask: (u16, u16)) -> u16 {
-        ((1 << mask.1) - 1) << mask.0 // e.g. (5, 5) => 1111100000
+        ((1 << mask.1) - 1) << mask.0 // e.g. (4, 5) => 111110000
     }
 
     pub fn set(&mut self, mask: (u16, u16), val: u8) {

@@ -46,7 +46,7 @@ impl CPU {
             x: 0,
             y: 0,
             s: STACK_INIT,
-            p: StatusRegister::from_bits(0b0100100).unwrap(),
+            p: StatusRegister::from_bits(0b00100100).unwrap(),
             pc: 0,
             wait_cycles: 0,
             cycles: 0,
@@ -60,7 +60,7 @@ impl CPU {
         self.x = 0;
         self.y = 0;
         self.s = STACK_INIT;
-        self.p = StatusRegister::from_bits(0b0100100).unwrap();
+        self.p = StatusRegister::from_bits(0b00100100).unwrap();
         self.wait_cycles = 0;
         self.cycles = 7;
 
@@ -68,26 +68,32 @@ impl CPU {
     }
 
     pub fn tick(&mut self) -> Option<String> {
-        if self.wait_cycles > 0 {
+        let log_option = if self.wait_cycles > 0 {
             self.wait_cycles -= 1;
-            self.cycles += 1;
             None
         } else {
             self.step()
-        }
+        };
+        self.cycles += 1;
+        log_option
     }
 
     pub fn step(&mut self) -> Option<String> {
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS
             .get(&opcode)
-            .expect("Unimplemented instruction");
+            .expect(&format!("Unimplemented instruction: {:#02X}", opcode)[..]);
         let log = if self.log {
             Some(self.format_step(op))
         } else {
             None
         };
         self.pc += 1;
+
+        // Dummy fetch for one-byte instructions
+        if op.mode.operand_length() == 0 {
+            self.memory.read(self.pc);
+        }
 
         self.wait_cycles = 0;
         let old_pc = self.pc;
@@ -96,14 +102,17 @@ impl CPU {
             // If not branch or jump
             self.pc += op.mode.operand_length();
         }
-        self.wait_cycles += op.cycles;
+        self.wait_cycles += op.cycles - 1;
 
         log
     }
 
     pub fn nmi(&mut self) {
         self.stack_push_u16(self.pc);
-        self.stack_push(self.p.bits());
+        let mut status = self.p.clone();
+        status.insert(StatusRegister::BREAK_HI);
+        status.remove(StatusRegister::BREAK_LO);
+        self.stack_push(status.bits());
         self.pc = self.memory.read_u16(NMI_VEC);
     }
 
@@ -261,7 +270,7 @@ impl CPU {
             "NOP" => {}
             "ORA" => self.bit_op(ops::BitOr::bitor, mode),
             "PHA" => self.stack_push(self.a),
-            "PHP" => self.stack_push(self.p.bits() | 0b00110000),
+            "PHP" => self.stack_push((self.p | StatusRegister::BREAK).bits()),
             "PLA" => self.pla(),
             "PLP" => {
                 let val = self.stack_pop();
@@ -301,6 +310,9 @@ impl CPU {
                 let addr = self.get_operand_address(mode).0;
                 self.memory.write(addr, self.a & self.x);
             }
+            "*SHY" => self.store_high_op(self.y, &mode),
+            "*SHX" => self.store_high_op(self.x, &mode),
+            "*AXA" => self.store_high_op(self.a & self.x, &mode),
 
             // RMW instructions
             "*DCP" => self.combined_op_str(vec!["DEC", "CMP"], mode, false),
@@ -336,12 +348,15 @@ impl CPU {
 
     /// Compare a register to memory, then set flags
     fn compare_op(&mut self, reg: u8, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
         let data = self.memory.read(addr);
         let temp: i16 = reg as i16 - data as i16;
         self.p.set(StatusRegister::NEGATIVE, (temp & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, temp == 0);
         self.p.set(StatusRegister::CARRY, temp >= 0x0);
+        if page_cross {
+            self.wait_cycles += 1;
+        }
     }
 
     /// Either increment or decrement data
@@ -501,6 +516,13 @@ impl CPU {
         self.pc = self.get_operand_address(mode).0;
     }
 
+    // Unimplemented instructions that AND the high byte of the
+    // operand address with some registers, then store the result
+    fn store_high_op(&mut self, val: u8, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        self.memory.write(addr, ((addr >> 8) as u8 + 1) & val);
+    }
+
     fn combined_op(&mut self, opcodes: Vec<u8>) {
         for opcode in opcodes {
             let op = INSTRUCTIONS
@@ -571,8 +593,8 @@ impl CPU {
         self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.a == 0);
 
-        let bit_5 = (self.a & (1 << 4)) != 0;
-        let bit_6 = (self.a & (1 << 5)) != 0;
+        let bit_5 = (self.a & (1 << 5)) != 0;
+        let bit_6 = (self.a & (1 << 6)) != 0;
         self.p.set(StatusRegister::CARRY, bit_6);
         self.p.set(StatusRegister::OVERFLOW, bit_5 ^ bit_6);
     }
@@ -584,8 +606,8 @@ impl CPU {
         let a_and_x = self.a & self.x;
         self.x = a_and_x.wrapping_sub(data);
         self.p.set(StatusRegister::CARRY, data <= a_and_x);
-        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
-        self.p.set(StatusRegister::ZERO, self.a == 0);
+        self.p.set(StatusRegister::NEGATIVE, (self.x & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.x == 0);
     }
 }
 
