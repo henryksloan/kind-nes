@@ -11,6 +11,7 @@ use memory::Memory;
 use registers::*;
 use scan::Scan;
 use sprite_data::SpriteData;
+use sprite_data::SpriteEvalState;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -84,6 +85,7 @@ impl PPU {
             }
 
             if self.scan.on_spr_fetch_cycle() {
+                self.registers.oamaddr = 0;
                 self.spr_fetch((self.scan.cycle - 256) / 8, (self.scan.cycle - 1) % 8);
             }
         }
@@ -98,35 +100,38 @@ impl PPU {
                 if self.scan.cycle == 65 {
                     self.spr_data.reset();
                 }
-                self.spr_eval((self.scan.cycle % 2) == 1);
+                if self.registers.ppumask.is_rendering() {
+                    self.spr_eval((self.scan.cycle % 2) == 1);
+                }
             }
 
             // Fetch pixels up until the unused NT fetches
             if (1 <= self.scan.cycle && self.scan.cycle <= 256)
                 || (321 <= self.scan.cycle && self.scan.cycle <= 336)
             {
+                // BG registers are also shifted on 321-336, allowing the first two tiles in
                 let (mut pixel_on, mut color) = self.get_bg_pixel();
-                let (spr_pixel_on, spr_color, spr_zero) = self.get_spr_pixel();
-                if spr_pixel_on {
-                    if pixel_on
-                        && spr_zero
-                        && self.registers.ppumask.is_rendering()
-                        && (self.scan.cycle != 256)
-                        && !((1 <= self.scan.cycle && self.scan.cycle <= 8)
-                            && (!self.registers.ppumask.contains(MaskRegister::BACK_LEFT_COL)
-                                || !self
-                                    .registers
-                                    .ppumask
-                                    .contains(MaskRegister::SPRITE_LEFT_COL)))
-                    {
-                        self.registers
-                            .ppustatus
-                            .insert(StatusRegister::SPRITE_ZERO_HIT);
-                    }
-                    pixel_on = true;
-                    color = spr_color;
-                }
                 if 1 <= self.scan.cycle && self.scan.cycle <= 256 {
+                    let (spr_pixel_on, spr_color, spr_zero) = self.get_spr_pixel();
+                    if spr_pixel_on {
+                        if pixel_on
+                            && spr_zero
+                            && self.registers.ppumask.is_rendering()
+                            && (self.scan.cycle != 256)
+                            && !((1 <= self.scan.cycle && self.scan.cycle <= 8)
+                                && (!self.registers.ppumask.contains(MaskRegister::BACK_LEFT_COL)
+                                    || !self
+                                        .registers
+                                        .ppumask
+                                        .contains(MaskRegister::SPRITE_LEFT_COL)))
+                        {
+                            self.registers
+                                .ppustatus
+                                .insert(StatusRegister::SPRITE_ZERO_HIT);
+                        }
+                        pixel_on = true;
+                        color = spr_color;
+                    }
                     let x = (self.scan.cycle - 1) as usize;
                     let y = self.scan.line as usize;
                     self.framebuffer[y][x] = if pixel_on {
@@ -159,8 +164,6 @@ impl PPU {
                 }
                 self.frame_ready = true;
             } else if self.scan.line == 261 {
-                self.spr_data.spr_num = 0;
-                self.spr_data.oam2_index = 0;
                 self.registers.ppustatus.clear();
             }
         }
@@ -310,23 +313,91 @@ impl PPU {
     }
 
     fn spr_eval(&mut self, odd_cycle: bool) {
-        // TODO: This doesn't emulate hardware at all
-        // TODO: It should be like a state machine, like https://wiki.nesdev.com/w/index.php/PPU_sprite_evaluation
-        let mut n_found = 0;
-        for oam_spr in 0..64 {
-            if n_found == 8 {
-                break;
-            }
-            let y = self.oam[4 * oam_spr as usize] as u16;
-            if y <= self.scan.line
-                && self.scan.line < y.wrapping_add(self.registers.ppuctrl.get_sprite_height())
-            {
-                for j in 0..4 {
-                    self.oam2[n_found * 4 + j] = self.oam[oam_spr as usize * 4 + j];
+        // TODO: Fix timing so reads only happen on odd cycles
+        /* if odd_cycle {
+            self.spr_data.oam_byte =
+                self.oam[4 * self.spr_data.spr_num as usize + self.spr_data.byte_num as usize];
+            return;
+        } */
+
+        self.spr_data.eval_state = match self.spr_data.eval_state {
+            SpriteEvalState::CopyY => {
+                let y = self.oam[4 * self.spr_data.spr_num as usize] as u16;
+                if self.spr_data.oam2_index < 8 {
+                    self.oam2[4 * self.spr_data.oam2_index as usize] = y as u8;
+                    if y <= self.scan.line
+                        && self.scan.line
+                            < y.wrapping_add(self.registers.ppuctrl.get_sprite_height())
+                    {
+                        SpriteEvalState::CopyRemaining(1)
+                    } else {
+                        SpriteEvalState::IncrementN
+                    }
+                } else {
+                    SpriteEvalState::IncrementN
                 }
-                n_found += 1;
             }
-        }
+            SpriteEvalState::CopyRemaining(m) => {
+                self.oam2[4 * (self.spr_data.oam2_index as usize) + m] =
+                    self.oam[4 * (self.spr_data.spr_num as usize) + m];
+
+                if m == 3 {
+                    self.spr_data.oam2_index += 1;
+                    SpriteEvalState::IncrementN
+                } else {
+                    SpriteEvalState::CopyRemaining(m + 1)
+                }
+            }
+            SpriteEvalState::IncrementN => {
+                self.spr_data.spr_num = (self.spr_data.spr_num + 1) % 64;
+
+                if self.spr_data.spr_num == 0 {
+                    SpriteEvalState::Done
+                } else if self.spr_data.oam2_index < 8 {
+                    SpriteEvalState::CopyY
+                } else {
+                    self.spr_data.byte_num = 0;
+                    SpriteEvalState::EvaluateAsY
+                }
+            }
+            SpriteEvalState::EvaluateAsY => {
+                let y = self.oam
+                    [4 * self.spr_data.spr_num as usize + self.spr_data.byte_num as usize]
+                    as u16;
+                if y <= self.scan.line
+                    && self.scan.line < y.wrapping_add(self.registers.ppuctrl.get_sprite_height())
+                {
+                    self.registers
+                        .ppustatus
+                        .insert(StatusRegister::SPRITE_OVERFLOW);
+                    SpriteEvalState::Overflow(1)
+                } else {
+                    self.spr_data.spr_num = (self.spr_data.spr_num + 1) % 64;
+                    self.spr_data.byte_num = (self.spr_data.byte_num + 1) % 4;
+
+                    if self.spr_data.spr_num == 0 {
+                        SpriteEvalState::Done
+                    } else {
+                        SpriteEvalState::EvaluateAsY
+                    }
+                }
+            }
+            SpriteEvalState::Overflow(entry) => {
+                self.spr_data.byte_num = (self.spr_data.byte_num + 1) % 4;
+                if self.spr_data.byte_num == 0 {
+                    self.spr_data.spr_num = (self.spr_data.spr_num + 1) % 64;
+                }
+                if entry == 3 {
+                    SpriteEvalState::EvaluateAsY
+                } else {
+                    SpriteEvalState::Overflow(entry + 1)
+                }
+            }
+            SpriteEvalState::Done => {
+                self.spr_data.spr_num = (self.spr_data.spr_num + 1) % 64;
+                SpriteEvalState::Done
+            }
+        };
     }
 
     fn get_bg_pixel(&mut self) -> (bool, u8) {
@@ -422,10 +493,8 @@ impl PPU {
                 .read(base + i);
             self.cpu_cycle(); // Read takes 1 CPU cycle
 
-            // TODO: I think this should be oamaddr, but it has to be reset at some point
-            self.oam[i as usize] = dma_val;
-            // self.oam.write(self.registers.oamaddr as u16, dma_val);
-            // self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
+            self.oam[self.registers.oamaddr as usize] = dma_val;
+            self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
             self.cpu_cycle(); // Write takes another
         }
     }
@@ -518,6 +587,7 @@ impl Memory for PPU {
     fn write(&mut self, addr: u16, data: u8) {
         assert!((addr >= 0x2000 && addr <= 0x2007) || addr == 0x4014);
 
+        self.registers.bus_latch = data;
         match addr {
             register_addrs::PPUCTRL => {
                 let old_nmi = self.registers.ppuctrl.contains(ControlRegister::NMI_ENABLE);
@@ -539,7 +609,7 @@ impl Memory for PPU {
             register_addrs::OAMADDR => self.registers.oamaddr = data,
             register_addrs::OAMDATA => {
                 self.oam[self.registers.oamaddr as usize] = data;
-                self.registers.oamaddr += self.registers.oamaddr.wrapping_add(1);
+                self.registers.oamaddr = self.registers.oamaddr.wrapping_add(1);
             }
             register_addrs::PPUSCROLL => {
                 use vram_addr::*;
