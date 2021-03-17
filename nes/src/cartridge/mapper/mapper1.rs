@@ -5,7 +5,6 @@ use memory::Memory;
 // https://wiki.nesdev.com/w/index.php/MMC1
 pub struct Mapper1 {
     n_prg_banks: u16,
-    n_chr_banks: u16,
     prg_rom: Vec<u8>,
     prg_ram: Vec<u8>,
     chr_mem: Vec<u8>,
@@ -24,7 +23,6 @@ impl Mapper1 {
     pub fn new(n_prg_banks: u16, n_chr_banks: u16, prg_data: Vec<u8>, chr_data: Vec<u8>) -> Self {
         Self {
             n_prg_banks,
-            n_chr_banks,
             prg_rom: prg_data,
             prg_ram: vec![0; 0x2000],
             chr_mem: if n_chr_banks == 0 {
@@ -62,7 +60,6 @@ impl Mapper for Mapper1 {
         }
     }
 
-    // TODO: Reset method
     fn reset(&mut self) {
         self.last_write_timer = 0;
         self.shift_register = 0b10000;
@@ -72,10 +69,10 @@ impl Mapper for Mapper1 {
         self.chr_bank_1 = 0;
         self.prg_bank = 0;
 
-        // TODO: Should PRG ram be cleared?
         // TODO: Different RAM sizes
         if self.chr_mem_is_ram {
             self.chr_mem = vec![0; 0x2000];
+            self.prg_ram = vec![0; 0x2000];
         }
     }
 }
