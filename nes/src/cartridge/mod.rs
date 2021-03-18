@@ -7,9 +7,7 @@ use cartridge_metadata::CartridgeMetadata;
 pub use cartridge_metadata::Mirroring;
 
 mod mapper;
-use mapper::Mapper;
-use mapper::Mapper0;
-use mapper::Mapper1;
+use mapper::*;
 
 pub struct Cartridge {
     meta: Option<CartridgeMetadata>,
@@ -47,6 +45,16 @@ impl Cartridge {
         let mapper: Box<dyn Mapper> = match meta.mapper_num {
             0 => Box::from(Mapper0::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
             1 => Box::from(Mapper1::new(n_prg_banks, n_chr_banks, prg_data, chr_data)),
+            2 => Box::from(Mapper2::new(n_prg_banks, prg_data)),
+            3 => Box::from(Mapper3::new(n_chr_banks, prg_data, chr_data)),
+            4 => Box::from(Mapper4::new(
+                n_prg_banks,
+                n_chr_banks,
+                prg_data,
+                chr_data,
+                meta.submapper_num == 1,
+            )),
+            7 => Box::from(Mapper7::new(n_prg_banks, prg_data)),
             _ => return Err("unsupported mapper"),
         };
 
@@ -62,10 +70,20 @@ impl Cartridge {
         } else {
             Mirroring::Horizontal
         };
-        if let Some(some_mapper) = &self.mapper {
+        if default == Mirroring::FourScreen {
+            default
+        } else if let Some(some_mapper) = &self.mapper {
             some_mapper.get_nametable_mirroring().unwrap_or(default)
         } else {
             default
+        }
+    }
+
+    pub fn check_irq(&mut self) -> bool {
+        if let Some(some_mapper) = &mut self.mapper {
+            some_mapper.check_irq()
+        } else {
+            false
         }
     }
 

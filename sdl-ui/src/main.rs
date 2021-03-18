@@ -49,8 +49,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    // let mut canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window.into_canvas().build().unwrap();
     canvas.set_scale(3.0, 3.0).unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
 

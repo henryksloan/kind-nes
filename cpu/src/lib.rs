@@ -116,6 +116,19 @@ impl CPU {
         self.pc = self.memory.read_u16(NMI_VEC);
     }
 
+    pub fn irq(&mut self) {
+        if self.p.contains(StatusRegister::IRQ_DISABLE) {
+            return;
+        }
+
+        self.stack_push_u16(self.pc);
+        let mut status = self.p.clone();
+        status.insert(StatusRegister::BREAK_HI);
+        status.remove(StatusRegister::BREAK_LO);
+        self.stack_push(status.bits());
+        self.pc = self.memory.read_u16(IRQ_VEC);
+    }
+
     fn format_step(&self, op: &Instruction) -> String {
         format!("{:<48}{}", self.format_instr(op), self.format_state())
     }

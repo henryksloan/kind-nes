@@ -95,7 +95,7 @@ impl CartridgeMetadata {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Mirroring {
     Horizontal,
     Vertical,
