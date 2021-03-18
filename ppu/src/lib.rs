@@ -85,7 +85,7 @@ impl PPU {
             }
 
             if self.scan.on_spr_fetch_cycle() {
-                self.spr_fetch((self.scan.cycle - 256) / 8, (self.scan.cycle - 1) % 8);
+                self.spr_fetch((self.scan.cycle - 257) / 8, (self.scan.cycle - 1) % 8);
             }
         }
 
@@ -223,11 +223,14 @@ impl PPU {
                     | self.registers.curr_addr.get(vram_addr::FINE_Y); // "the row number within a tile"
 
                 self.bg_data.latch.patt_lo = self.memory.read(patt_addr + 0);
-                self.bg_data.latch.patt_hi = self.memory.read(patt_addr + 8);
             }
             6 => {
                 // Read pattern data from the upper bit plane of the pattern table
-                // (Performed alongside pattern low to avoid repeating work)
+                let patt_addr = self.registers.ppuctrl.get_patt_base() // PPUCTRL selects left or right half of table
+                    | ((self.bg_data.latch.nt_byte as u16) << 4) // NT byte is 4 bits of row, 4 bits of col
+                    | self.registers.curr_addr.get(vram_addr::FINE_Y); // "the row number within a tile"
+
+                self.bg_data.latch.patt_hi = self.memory.read(patt_addr + 8);
             }
             7 => {
                 if self.registers.ppumask.is_rendering() {
@@ -266,7 +269,7 @@ impl PPU {
                     .line
                     .wrapping_sub(self.oam2[4 * (spr_num as usize) + 0] as u16);
                 let mut any_good = false;
-                for i in 0..4 {
+                for i in 1..4 {
                     if self.oam2[4 * (spr_num as usize) + i] != 0xFF {
                         any_good = true;
                         break;
@@ -305,8 +308,9 @@ impl PPU {
                 let patt_addr = base | (tile_index << 4) | y;
                 self.spr_data.registers[spr_num as usize].patt_shift[0] =
                     self.memory.read(patt_addr + 0);
+                // This second fetch is a peek - a temporary fix for MMC3
                 self.spr_data.registers[spr_num as usize].patt_shift[1] =
-                    self.memory.read(patt_addr.wrapping_add(8));
+                    self.memory.peek(patt_addr.wrapping_add(8));
             }
             6 => {
                 // Pattern table tile high (fetched alongside low to avoid repeating work)
@@ -483,6 +487,18 @@ impl PPU {
             }
         }
 
+        if !self.registers.ppumask.contains(MaskRegister::SPRITE_ENABLE)
+            || (!self
+                .registers
+                .ppumask
+                .contains(MaskRegister::SPRITE_LEFT_COL)
+                && (self.scan.cycle - 1 < 8))
+        {
+            pixel_option = None;
+        }
+
+        // TODO: Make a struct for this
+        // (pixel_on, color, priority, is_sprite_zero)
         pixel_option.unwrap_or((false, 0x00, false, false))
     }
 
