@@ -54,6 +54,7 @@ impl Cartridge {
                 chr_data,
                 meta.submapper_num == 1,
             )),
+            7 => Box::from(Mapper7::new(n_prg_banks, prg_data)),
             _ => return Err("unsupported mapper"),
         };
 
