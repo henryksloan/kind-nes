@@ -4,6 +4,7 @@ members = [
     "nes",
     "cpu",
     "ppu",
+    "apu",
     "memory",
 ]
 
