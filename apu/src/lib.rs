@@ -31,8 +31,8 @@ pub struct APU {
 impl APU {
     pub fn new() -> Self {
         Self {
-            pulse1: PulseChannel::new(),
-            pulse2: PulseChannel::new(),
+            pulse1: PulseChannel::new(false),
+            pulse2: PulseChannel::new(true),
             triangle: TriangleChannel::new(),
             noise: NoiseChannel::new(),
             dmc: DMCChannel::new(),
@@ -67,10 +67,12 @@ impl APU {
         if self.frame_counter_cycle % (self.clock_rate / 240) == 0 {
             // Do nothing on the last step of the 5-step sequence
             if self.frame_sequence_step != 4 {
-                // Clock envelopes on every frame step
+                // Clock envelopes and linear counter on every frame step
                 self.pulse1.envelope.tick();
                 self.pulse2.envelope.tick();
                 self.noise.envelope.tick();
+                self.noise.envelope.tick();
+                self.triangle.tick_linear();
 
                 // Clock length counters on steps 1 and 3 in 4-step sequence, 0 and 2 in 5-step
                 if self.frame_sequence_step % 2 == (self.frame_sequence_len == 4) as u8 {
@@ -78,6 +80,9 @@ impl APU {
                     self.pulse2.length_counter.tick();
                     self.triangle.length_counter.tick();
                     self.noise.length_counter.tick();
+
+                    self.pulse1.tick_sweep();
+                    self.pulse2.tick_sweep();
                 }
 
                 if self.frame_sequence_step == 3
@@ -100,6 +105,7 @@ impl Memory for APU {
         todo!()
     }
 
+    // TODO: Can probably use functions like pulse1.envelope.update(data)
     fn write(&mut self, addr: u16, data: u8) {
         todo!()
     }
