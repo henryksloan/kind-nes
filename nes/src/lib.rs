@@ -12,6 +12,7 @@ use crate::cpu_mapped_registers::CPUMappedRegisters;
 use crate::nametable_memory::NametableMemory;
 use crate::palette_ram::PaletteRAM;
 
+use apu::APU;
 use cpu::CPU;
 use memory::mmu::MMU;
 use ppu::PPU;
@@ -22,6 +23,7 @@ use std::rc::Rc;
 pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
+    apu: Rc<RefCell<APU>>,
     cart: Rc<RefCell<Cartridge>>,
     joy1: Rc<RefCell<dyn Controller>>,
     joy2: Rc<RefCell<dyn Controller>>,
@@ -44,9 +46,11 @@ impl NES {
         ppu_mmu.map(0x3F00, 0x3FFF, Rc::new(RefCell::new(PaletteRAM::new()))); // Palette RAM indices
         let ppu = Rc::new(RefCell::new(PPU::new(Box::from(ppu_mmu))));
 
+        let apu = Rc::new(RefCell::new(APU::new()));
+
         let cpu_mapped_registers = Rc::new(RefCell::new(CPUMappedRegisters::new(
             ppu.clone(),
-            ppu.clone(), // TODO: This should be APU
+            apu.clone(),
             joy1.clone(),
             joy2.clone(),
         )));
@@ -65,6 +69,7 @@ impl NES {
         Self {
             cpu,
             ppu,
+            apu,
             cart,
             joy1,
             joy2,
@@ -93,6 +98,7 @@ impl NES {
         if let Some(log) = self.cpu.borrow_mut().tick() {
             println!("{}", log);
         }
+        self.apu.borrow_mut().tick();
         self.ppu.borrow_mut().cpu_cycle();
         self.cart.borrow_mut().cycle(); // TODO:
         if self.ppu.borrow().nmi {

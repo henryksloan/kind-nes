@@ -113,6 +113,7 @@ impl CPU {
         status.insert(StatusRegister::BREAK_HI);
         status.remove(StatusRegister::BREAK_LO);
         self.stack_push(status.bits());
+        self.p.insert(StatusRegister::IRQ_DISABLE);
         self.pc = self.memory.read_u16(NMI_VEC);
     }
 
@@ -126,6 +127,7 @@ impl CPU {
         status.insert(StatusRegister::BREAK_HI);
         status.remove(StatusRegister::BREAK_LO);
         self.stack_push(status.bits());
+        self.p.insert(StatusRegister::IRQ_DISABLE);
         self.pc = self.memory.read_u16(IRQ_VEC);
     }
 

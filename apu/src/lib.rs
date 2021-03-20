@@ -53,7 +53,7 @@ impl APU {
         self.pulse2.tick();
         self.triangle.tick();
         self.noise.tick();
-        self.dmc.tick();
+        // self.dmc.tick();
 
         // The frame counter divides the clock to ~240 Hz
         // which feeds a variable-step sequencer, which controls
@@ -94,11 +94,23 @@ impl APU {
 // https://wiki.nesdev.com/w/index.php/APU_registers
 impl Memory for APU {
     fn read(&mut self, addr: u16) -> u8 {
-        todo!()
+        assert!(addr == 0x4015);
+
+        let data = self.peek(addr);
+        self.frame_irq = false;
+        data
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        todo!()
+        assert!(addr == 0x4015);
+
+        // TODO: D will read as 1 if the DMC bytes remaining is more than 0.
+        ((self.dmc_irq as u8) << 7)
+            | ((self.frame_irq as u8) << 6)
+            | (((self.noise.length_counter.counter > 0) as u8) << 3)
+            | (((self.triangle.length_counter.counter > 0) as u8) << 2)
+            | (((self.pulse2.length_counter.counter > 0) as u8) << 1)
+            | (((self.pulse1.length_counter.counter > 0) as u8) << 0)
     }
 
     fn write(&mut self, addr: u16, data: u8) {
@@ -121,7 +133,7 @@ impl Memory for APU {
             self.pulse2.length_counter.update_enabled(data >> 1 & 1);
             self.triangle.length_counter.update_enabled(data >> 2 & 1);
             self.noise.length_counter.update_enabled(data >> 3 & 1);
-            self.dmc.update_enabled(data >> 4 & 1);
+            // self.dmc.update_enabled(data >> 4 & 1);
         } else if addr == 0x4017 {
             // "If the mode flag is clear, the 4-step sequence is selected, otherwise the
             // 5-step sequence is selected and the sequencer is immediately clocked once."
