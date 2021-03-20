@@ -21,20 +21,18 @@ impl LengthCounter {
     }
 
     pub fn update_enabled(&mut self, control_bit: u8) {
-        if control_bit == 1 {
-            self.enabled = true;
-        } else {
-            self.enabled = false;
+        self.enabled = control_bit == 1;
+        if !self.enabled {
             self.counter = 0;
         }
     }
 
     pub fn load(&mut self, length_table_index: u8) {
-        self.counter = if (length_table_index >> 4) & 1 == 1 {
-            LENGTH_TABLE_HI[length_table_index as usize & 0b1111]
+        self.counter = if length_table_index & 1 == 1 {
+            LENGTH_TABLE_HI[length_table_index as usize >> 1]
         } else {
-            LENGTH_TABLE_LO[length_table_index as usize & 0b1111]
-        }
+            LENGTH_TABLE_LO[length_table_index as usize >> 1]
+        };
     }
 }
 
