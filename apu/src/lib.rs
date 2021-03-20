@@ -3,16 +3,7 @@ mod channels;
 use channels::*;
 use memory::Memory;
 
-// https://wiki.nesdev.com/w/index.php/APU_registers
-pub const PULSE1_BASE: u16 = 0x4000;
-pub const PULSE2_BASE: u16 = 0x4004;
-pub const TRIANGLE_BASE: u16 = 0x4008;
-pub const NOISE_BASE: u16 = 0x400C;
-pub const DMC_BASE: u16 = 0x4010;
-pub const STATUS: u16 = 0x4015; // Writing exposes controls
-pub const FRAME_COUNTER: u16 = 0x4017;
-
-// http://nesdev.com/apu_ref.txt
+// http://www.slack.net/~ant/nes-emu/apu_ref.txt
 pub struct APU {
     pulse1: PulseChannel,
     pulse2: PulseChannel,
@@ -20,12 +11,14 @@ pub struct APU {
     noise: NoiseChannel,
     dmc: DMCChannel,
 
-    clock_rate: u32,
-    frame_counter_cycle: u32,
+    clock_rate: u64,
+    frame_counter_cycle: u64,
     frame_sequence_len: u8,
     frame_sequence_step: u8,
+
     irq_disable: bool,
-    pub irq: bool,
+    frame_irq: bool,
+    dmc_irq: bool,
 }
 
 impl APU {
@@ -41,8 +34,10 @@ impl APU {
             frame_counter_cycle: 0,
             frame_sequence_len: 4,
             frame_sequence_step: 0,
+
             irq_disable: false,
-            irq: false,
+            frame_irq: false,
+            dmc_irq: false,
         }
     }
 
@@ -89,13 +84,14 @@ impl APU {
                     && self.frame_sequence_len == 4
                     && !self.irq_disable
                 {
-                    self.irq = true;
+                    self.frame_irq = true;
                 }
             }
         }
     }
 }
 
+// https://wiki.nesdev.com/w/index.php/APU_registers
 impl Memory for APU {
     fn read(&mut self, addr: u16) -> u8 {
         todo!()
@@ -105,8 +101,51 @@ impl Memory for APU {
         todo!()
     }
 
-    // TODO: Can probably use functions like pulse1.envelope.update(data)
     fn write(&mut self, addr: u16, data: u8) {
-        todo!()
+        assert!((0x4000 <= addr && addr <= 0x4017) && addr != 0x4014);
+
+        if 0x4000 <= addr && addr <= 0x4003 {
+            self.pulse1.update_register(addr - 0x4000, data);
+        } else if 0x4004 <= addr && addr <= 0x4007 {
+            self.pulse2.update_register(addr - 0x4004, data);
+        } else if 0x4008 <= addr && addr <= 0x400B {
+            self.triangle.update_register(addr - 0x4008, data);
+        } else if 0x400C <= addr && addr <= 0x400F {
+            self.noise.update_register(addr - 0x400C, data);
+        } else if 0x4010 <= addr && addr <= 0x4013 {
+            // TODO
+            // self.dmc.update_register(addr - 0x4010, data);
+        } else if addr == 0x4015 {
+            self.dmc_irq = false;
+            self.pulse1.length_counter.update_enabled(data >> 0 & 1);
+            self.pulse2.length_counter.update_enabled(data >> 1 & 1);
+            self.triangle.length_counter.update_enabled(data >> 2 & 1);
+            self.noise.length_counter.update_enabled(data >> 3 & 1);
+            self.dmc.update_enabled(data >> 4 & 1);
+        } else if addr == 0x4017 {
+            // "If the mode flag is clear, the 4-step sequence is selected, otherwise the
+            // 5-step sequence is selected and the sequencer is immediately clocked once."
+            if data >> 7 == 1 {
+                self.frame_sequence_len = 5;
+                self.frame_sequence_step = 1;
+
+                self.pulse1.envelope.tick();
+                self.pulse2.envelope.tick();
+                self.noise.envelope.tick();
+                self.noise.envelope.tick();
+                self.triangle.tick_linear();
+
+                self.pulse1.length_counter.tick();
+                self.pulse2.length_counter.tick();
+                self.triangle.length_counter.tick();
+                self.noise.length_counter.tick();
+
+                self.pulse1.tick_sweep();
+                self.pulse2.tick_sweep();
+            } else {
+                self.frame_sequence_len = 4;
+            };
+            self.irq_disable = (data >> 6) & 1 == 1;
+        }
     }
 }

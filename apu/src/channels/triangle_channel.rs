@@ -2,7 +2,6 @@ use crate::channels::length_counter::LengthCounter;
 
 // https://wiki.nesdev.com/w/index.php/APU_Triangle
 pub struct TriangleChannel {
-    pub enabled: bool,
     pub timer: u16,
     pub timer_period: u16,
     pub sequence_step: u8,
@@ -18,7 +17,6 @@ pub struct TriangleChannel {
 impl TriangleChannel {
     pub fn new() -> Self {
         Self {
-            enabled: false,
             timer: 0,
             timer_period: 0,
             sequence_step: 0,
@@ -50,6 +48,32 @@ impl TriangleChannel {
 
         if !self.linear_control {
             self.linear_reset = false;
+        }
+    }
+
+    pub fn update_register(&mut self, register_offset: u16, data: u8) {
+        match register_offset {
+            0 => {
+                self.length_counter.halt = (data >> 7) & 1 == 1; // These two share a bit
+                self.linear_control = (data >> 7) & 1 == 1;
+                self.linear_period = data & 0b0111_1111;
+            }
+            1 => unimplemented!(),
+            2 => {
+                self.timer_period &= 0xFF00;
+                self.timer_period |= data as u16;
+            }
+            3 => {
+                self.timer_period &= 0x00FF;
+                self.timer_period |= (data as u16 & 0b111) << 8;
+
+                if self.length_counter.enabled {
+                    self.length_counter.load(data >> 3);
+                }
+
+                self.linear_reset = true;
+            }
+            _ => unimplemented!(),
         }
     }
 }

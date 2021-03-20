@@ -19,4 +19,8 @@ impl DMCChannel {
     pub fn tick(&mut self) {
         todo!()
     }
+
+    pub fn update_enabled(&mut self, control_bit: u8) {
+        todo!()
+    }
 }

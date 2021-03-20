@@ -3,7 +3,6 @@ use crate::channels::{envelope::Envelope, length_counter::LengthCounter};
 // https://wiki.nesdev.com/w/index.php/APU_Pulse
 pub struct PulseChannel {
     pub is_pulse2: bool,
-    pub enabled: bool,
     pub even_latch: bool,
     pub timer: u16,
     pub timer_period: u16,
@@ -25,7 +24,6 @@ impl PulseChannel {
     pub fn new(is_pulse2: bool) -> Self {
         Self {
             is_pulse2,
-            enabled: false,
             even_latch: true,
             timer: 0,
             timer_period: 0,
@@ -50,7 +48,7 @@ impl PulseChannel {
                 self.timer -= 1;
             } else {
                 // TODO: Should this be plus 1?
-                // http://nesdev.com/apu_ref.txt:
+                // http://www.slack.net/~ant/nes-emu/apu_ref.txt
                 // "For the square and triangle channels, the third and fourth registers form an 11-bit
                 // value and the divider's period is set to this value *plus one*."
                 self.timer = self.timer_period;
@@ -80,10 +78,45 @@ impl PulseChannel {
         }
 
         if self.sweep_timer == 0 || self.sweep_reset {
-            self.sweep_timer = self.sweep_period;
+            self.sweep_timer = self.sweep_period + 1;
             self.sweep_reset = false;
         } else {
             self.sweep_timer -= 1;
+        }
+    }
+
+    pub fn update_register(&mut self, register_offset: u16, data: u8) {
+        match register_offset {
+            0 => {
+                self.duty_cycle_select = data >> 6;
+                self.length_counter.halt = (data >> 5) & 1 == 1; // These two share a bit
+                self.envelope.loop_flag = (data >> 5) & 1 == 1;
+                self.envelope.constant_volume = (data >> 4) & 1 == 1;
+                self.envelope.period = data & 0b1111;
+            }
+            1 => {
+                self.sweep_reset = true;
+                self.sweep_enable = data >> 7 == 1;
+                self.sweep_period = (data >> 4) & 0b111;
+                self.sweep_negate = (data >> 3) & 1 == 1;
+                self.sweep_shift = data & 0b111;
+            }
+            2 => {
+                self.timer_period &= 0xFF00;
+                self.timer_period |= data as u16;
+            }
+            3 => {
+                self.timer_period &= 0x00FF;
+                self.timer_period |= (data as u16 & 0b111) << 8;
+
+                if self.length_counter.enabled {
+                    self.length_counter.load(data >> 3);
+                }
+
+                self.sequence_step = 0;
+                self.envelope.start = true;
+            }
+            _ => unimplemented!(),
         }
     }
 }
