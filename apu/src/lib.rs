@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 mod channels;
 
 use channels::*;
@@ -19,6 +22,8 @@ pub struct APU {
     irq_disable: bool,
     frame_irq: bool,
     dmc_irq: bool,
+
+    audio_buff: Vec<f32>,
 }
 
 impl APU {
@@ -38,6 +43,8 @@ impl APU {
             irq_disable: false,
             frame_irq: false,
             dmc_irq: false,
+
+            audio_buff: Vec::new(),
         }
     }
 
@@ -88,6 +95,22 @@ impl APU {
                 }
             }
         }
+
+        if self.frame_counter_cycle % (self.clock_rate / 96000) == 0 && self.audio_buff.len() < 4096
+        {
+            let pulse_out =
+                PULSE_TABLE[self.pulse1.output() as usize + self.pulse2.output() as usize];
+            // TODO: DMC
+            let tnd_out =
+                TND_TABLE[3 * self.triangle.output() as usize + 2 * self.noise.output() as usize];
+            self.audio_buff.push(pulse_out + tnd_out);
+        }
+    }
+
+    pub fn take_audio_buff(&mut self) -> Vec<f32> {
+        let out = self.audio_buff.clone();
+        self.audio_buff.clear();
+        out
     }
 }
 
@@ -139,25 +162,46 @@ impl Memory for APU {
             // 5-step sequence is selected and the sequencer is immediately clocked once."
             if data >> 7 == 1 {
                 self.frame_sequence_len = 5;
-                self.frame_sequence_step = 1;
+                // self.frame_sequence_step = 1;
 
-                self.pulse1.envelope.tick();
-                self.pulse2.envelope.tick();
-                self.noise.envelope.tick();
-                self.noise.envelope.tick();
-                self.triangle.tick_linear();
+                if self.frame_sequence_step != 4 {
+                    self.pulse1.envelope.tick();
+                    self.pulse2.envelope.tick();
+                    self.noise.envelope.tick();
+                    self.noise.envelope.tick();
+                    self.triangle.tick_linear();
 
-                self.pulse1.length_counter.tick();
-                self.pulse2.length_counter.tick();
-                self.triangle.length_counter.tick();
-                self.noise.length_counter.tick();
+                    // TODO: These should be ticked, but it seems to make them go down too fast
+                    /* self.pulse1.length_counter.tick();
+                    self.pulse2.length_counter.tick();
+                    self.triangle.length_counter.tick();
+                    self.noise.length_counter.tick(); */
 
-                self.pulse1.tick_sweep();
-                self.pulse2.tick_sweep();
+                    self.pulse1.tick_sweep();
+                    self.pulse2.tick_sweep();
+                }
             } else {
                 self.frame_sequence_len = 4;
             };
             self.irq_disable = (data >> 6) & 1 == 1;
         }
     }
+}
+
+// https://wiki.nesdev.com/w/index.php/APU_Mixer#Lookup_Table
+lazy_static! {
+    pub static ref PULSE_TABLE: [f32; 31] = {
+        let mut table = [0.0; 31];
+        for i in 0..31 {
+            table[i] = 95.52 / ((8128.0 / i as f32) + 100.0);
+        }
+        table
+    };
+    pub static ref TND_TABLE: [f32; 203] = {
+        let mut table = [0.0; 203];
+        for i in 0..203 {
+            table[i] = 163.67 / ((24329.0 / i as f32) + 100.0);
+        }
+        table
+    };
 }

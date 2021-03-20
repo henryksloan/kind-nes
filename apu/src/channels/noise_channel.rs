@@ -39,8 +39,8 @@ impl NoiseChannel {
                 let feedback_xor_bit_index = if self.shift_mode { 6 } else { 1 };
                 let feedback_xor_bit =
                     (self.shift & (1 << feedback_xor_bit_index)) >> feedback_xor_bit_index;
-                let feedback = (self.shift & 1) | feedback_xor_bit;
-                self.shift >>= (self.shift >> 1) | (feedback << 14);
+                let feedback = (self.shift & 1) ^ feedback_xor_bit;
+                self.shift = (self.shift >> 1) | (feedback << 14);
             }
         }
         self.even_latch = !self.even_latch;
@@ -67,6 +67,14 @@ impl NoiseChannel {
                 self.envelope.start = true;
             }
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn output(&self) -> u8 {
+        if self.shift & 1 == 1 || self.length_counter.counter == 0 {
+            0
+        } else {
+            self.envelope.get_volume()
         }
     }
 }

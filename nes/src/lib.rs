@@ -23,7 +23,7 @@ use std::rc::Rc;
 pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
-    apu: Rc<RefCell<APU>>,
+    pub apu: Rc<RefCell<APU>>,
     cart: Rc<RefCell<Cartridge>>,
     joy1: Rc<RefCell<dyn Controller>>,
     joy2: Rc<RefCell<dyn Controller>>,

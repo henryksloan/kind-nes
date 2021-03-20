@@ -22,6 +22,8 @@ impl LengthCounter {
 
     pub fn update_enabled(&mut self, control_bit: u8) {
         if control_bit == 1 {
+            self.enabled = true;
+        } else {
             self.enabled = false;
             self.counter = 0;
         }

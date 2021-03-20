@@ -16,8 +16,8 @@ pub struct PulseChannel {
     pub sweep_period: u8,
     pub sweep_negate: bool,
     pub sweep_shift: u8,
+    pub sweep_target_period: u16,
     pub sweep_reset: bool,
-    pub sweep_muting: bool,
 }
 
 impl PulseChannel {
@@ -37,8 +37,8 @@ impl PulseChannel {
             sweep_period: 0,
             sweep_negate: false,
             sweep_shift: 0,
+            sweep_target_period: 0,
             sweep_reset: false,
-            sweep_muting: false,
         }
     }
 
@@ -60,7 +60,7 @@ impl PulseChannel {
 
     pub fn tick_sweep(&mut self) {
         // https://wiki.nesdev.com/w/index.php/APU_Sweep#Calculating_the_target_period
-        let target_period = {
+        self.sweep_target_period = {
             let mut change = self.timer_period >> self.sweep_shift;
             if self.sweep_negate {
                 // "Pulse 1 adds the ones' complement (−c − 1)
@@ -72,9 +72,9 @@ impl PulseChannel {
         };
 
         // http://wiki.nesdev.com/w/index.php/APU_Sweep#Updating_the_period
-        self.sweep_muting = target_period > 0x7FF || self.timer_period < 8;
-        if self.sweep_timer == 0 && self.sweep_enable && !self.sweep_muting {
-            self.timer_period = target_period;
+        let muting = self.sweep_target_period > 0x7FF || self.timer_period < 8;
+        if self.sweep_timer == 0 && self.sweep_enable && !muting {
+            self.timer_period = self.sweep_target_period;
         }
 
         if self.sweep_timer == 0 || self.sweep_reset {
@@ -119,4 +119,26 @@ impl PulseChannel {
             _ => unimplemented!(),
         }
     }
+
+    pub fn output(&self) -> u8 {
+        if PULSE_DUTY_TABLE[self.duty_cycle_select as usize][self.sequence_step as usize] == 0
+            || (self.sweep_target_period > 0x7FF || self.timer_period < 8)
+            || self.length_counter.counter == 0
+            || self.timer < 8
+        {
+            0
+        } else {
+            self.envelope.get_volume()
+        }
+    }
 }
+
+// https://wiki.nesdev.com/w/index.php/APU_Pulse#Implementation_details
+// The real APU counts *downwards* through simpler sequences
+// But this skips a step, counting upwards through these sequences
+const PULSE_DUTY_TABLE: [[u8; 8]; 4] = [
+    [0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 1, 1, 0, 0, 0, 0, 0],
+    [0, 1, 1, 1, 1, 0, 0, 0],
+    [1, 0, 0, 1, 1, 1, 1, 1],
+];
