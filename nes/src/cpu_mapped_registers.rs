@@ -32,8 +32,7 @@ impl CPUMappedRegisters {
             || (addr == 0x4015)
             || (write && addr == 0x4017)
         {
-            // Ok(&self.apu)
-            Err("TODO")
+            Ok(&self.apu)
         } else if addr == 0x4014 {
             Ok(&self.ppu)
         } else if addr == 0x4016 {

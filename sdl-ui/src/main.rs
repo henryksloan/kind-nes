@@ -12,6 +12,8 @@ use sdl2::keyboard::Keycode;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::PixelFormatEnum;
 
+use sdl2::audio::AudioSpecDesired;
+
 const COLORS: &'static [i32] = &[
     0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00, 0x333500,
     0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000, 0xADADAD, 0x155FD9,
@@ -60,6 +62,18 @@ fn main() {
 
     let mut screen_buff = [0u8; 256 * 240 * 3];
 
+    let audio_subsystem = sdl_context.audio().unwrap();
+    let desired_spec = AudioSpecDesired {
+        freq: Some(96000),
+        channels: Some(1), // mono
+        samples: None,     // default sample size
+    };
+
+    let device = audio_subsystem
+        .open_queue::<f32, _>(None, &desired_spec)
+        .unwrap();
+    device.resume();
+
     let controls = vec![
         Scancode::Right,
         Scancode::Left,
@@ -107,6 +121,7 @@ fn main() {
         }
 
         if let Some(framebuffer) = nes.get_new_frame() {
+            device.queue(&nes.apu.borrow_mut().take_audio_buff());
             if (frame_count + 1) % frames_per_rate_check == 0 {
                 if (frame_count + 1) % (frames_per_rate_check * checks_per_rate_report) == 0 {
                     canvas

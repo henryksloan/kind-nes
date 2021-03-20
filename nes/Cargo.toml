@@ -7,4 +7,5 @@ edition = "2018"
 [dependencies]
 cpu = { path = "../cpu" }
 ppu = { path = "../ppu" }
+apu = { path = "../apu" }
 memory = { path = "../memory" }

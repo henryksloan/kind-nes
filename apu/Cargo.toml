@@ -1,0 +1,9 @@
+[package]
+name = "apu"
+version = "0.1.0"
+authors = ["Henry Sloan <henryksloan@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+memory = { path = "../memory" }
+lazy_static = "1.4.0"
