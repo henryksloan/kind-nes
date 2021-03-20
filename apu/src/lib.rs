@@ -60,7 +60,7 @@ impl APU {
         self.pulse2.tick();
         self.triangle.tick();
         self.noise.tick();
-        // self.dmc.tick();
+        self.dmc.tick();
 
         // The frame counter divides the clock to ~240 Hz
         // which feeds a variable-step sequencer, which controls
@@ -101,9 +101,9 @@ impl APU {
         {
             let pulse_out =
                 PULSE_TABLE[self.pulse1.output() as usize + self.pulse2.output() as usize];
-            // TODO: DMC
-            let tnd_out =
-                TND_TABLE[3 * self.triangle.output() as usize + 2 * self.noise.output() as usize];
+            let tnd_out = TND_TABLE[3 * self.triangle.output() as usize
+                + 2 * self.noise.output() as usize
+                + self.dmc.output() as usize];
             self.audio_buff.push(pulse_out + tnd_out);
         }
 
@@ -130,9 +130,9 @@ impl Memory for APU {
     fn peek(&self, addr: u16) -> u8 {
         assert!(addr == 0x4015);
 
-        // TODO: D will read as 1 if the DMC bytes remaining is more than 0.
         ((self.dmc_irq as u8) << 7)
             | ((self.frame_irq as u8) << 6)
+            | (((self.dmc.bytes_remaining > 0) as u8) << 4)
             | (((self.noise.length_counter.counter > 0) as u8) << 3)
             | (((self.triangle.length_counter.counter > 0) as u8) << 2)
             | (((self.pulse2.length_counter.counter > 0) as u8) << 1)
@@ -151,15 +151,14 @@ impl Memory for APU {
         } else if 0x400C <= addr && addr <= 0x400F {
             self.noise.update_register(addr - 0x400C, data);
         } else if 0x4010 <= addr && addr <= 0x4013 {
-            // TODO
-            // self.dmc.update_register(addr - 0x4010, data);
+            self.dmc.update_register(addr - 0x4010, data);
         } else if addr == 0x4015 {
             self.dmc_irq = false;
             self.pulse1.length_counter.update_enabled((data >> 0) & 1);
             self.pulse2.length_counter.update_enabled((data >> 1) & 1);
             self.triangle.length_counter.update_enabled((data >> 2) & 1);
             self.noise.length_counter.update_enabled((data >> 3) & 1);
-            // self.dmc.update_enabled(data >> 4 & 1);
+            self.dmc.update_enabled((data >> 4) & 1);
         } else if addr == 0x4017 {
             // "If the mode flag is clear, the 4-step sequence is selected, otherwise the
             // 5-step sequence is selected and the sequencer is immediately clocked once."
