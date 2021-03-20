@@ -6,6 +6,9 @@ mod channels;
 use channels::*;
 use memory::Memory;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 // http://www.slack.net/~ant/nes-emu/apu_ref.txt
 pub struct APU {
     pulse1: PulseChannel,
@@ -46,6 +49,16 @@ impl APU {
 
             audio_buff: Vec::new(),
         }
+    }
+
+    pub fn set_dma(&mut self, dma: Rc<RefCell<dyn Memory>>) {
+        self.dmc.set_dma(dma);
+    }
+
+    pub fn check_stall_cpu(&mut self) -> bool {
+        let stall = self.dmc.stall_cpu;
+        self.dmc.stall_cpu = false;
+        stall
     }
 
     pub fn reset(&mut self) {

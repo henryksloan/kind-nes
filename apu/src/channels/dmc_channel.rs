@@ -1,3 +1,8 @@
+use memory::Memory;
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
 // https://wiki.nesdev.com/w/index.php/APU_DMC
 // TODO: Make fewer fields pub in all these structs
 pub struct DMCChannel {
@@ -13,6 +18,9 @@ pub struct DMCChannel {
     pub sample_address: u16,
     pub sample_len: u16,
 
+    pub dma_option: Option<Rc<RefCell<dyn Memory>>>,
+    pub dma_request: bool,
+    pub stall_cpu: bool,
     pub sample_buffer: Option<u8>,
     pub shift: u8,
     pub dma_address: u16,
@@ -36,6 +44,9 @@ impl DMCChannel {
             sample_address: 0,
             sample_len: 0,
 
+            dma_option: None,
+            dma_request: false,
+            stall_cpu: false,
             sample_buffer: None,
             shift: 0,
             dma_address: 0,
@@ -45,7 +56,16 @@ impl DMCChannel {
         }
     }
 
+    pub fn set_dma(&mut self, dma: Rc<RefCell<dyn Memory>>) {
+        self.dma_option = Some(dma);
+    }
+
     pub fn tick(&mut self) {
+        if self.dma_request {
+            self.dma_request = false;
+            self.sample_buffer = Some(self.dma_read(self.dma_address));
+        }
+
         if self.even_latch {
             if self.timer > 0 {
                 self.timer -= 1;
@@ -73,7 +93,7 @@ impl DMCChannel {
                         self.shift = buffer_contents;
                         self.sample_buffer = None;
                         if self.bytes_remaining > 0 {
-                            self.sample_buffer = Some(todo!("DMA read"));
+                            self.sample_buffer = Some(self.dma_read(self.dma_address));
                             if self.dma_address == 0xFFFF {
                                 self.dma_address = 0;
                             } else {
@@ -105,7 +125,7 @@ impl DMCChannel {
             if self.bytes_remaining == 0 {
                 self.dma_address = self.sample_address;
                 self.bytes_remaining = self.sample_len;
-                self.sample_buffer = Some(todo!("DMA read"));
+                self.dma_request = true;
             }
         } else {
             self.bytes_remaining = 0;
@@ -134,6 +154,15 @@ impl DMCChannel {
 
     pub fn output(&self) -> u8 {
         self.dac_level
+    }
+
+    fn dma_read(&mut self, addr: u16) -> u8 {
+        self.stall_cpu = true;
+        if self.dma_option.is_none() {
+            0
+        } else {
+            self.dma_option.as_ref().unwrap().borrow_mut().read(addr)
+        }
     }
 }
 

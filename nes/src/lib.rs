@@ -65,6 +65,7 @@ impl NES {
         cpu.borrow_mut().reset();
 
         ppu.borrow_mut().set_dma(cpu.clone());
+        apu.borrow_mut().set_dma(cpu.clone());
 
         Self {
             cpu,
@@ -98,9 +99,16 @@ impl NES {
         if let Some(log) = self.cpu.borrow_mut().tick() {
             println!("{}", log);
         }
+
         self.apu.borrow_mut().tick();
+        // https://wiki.nesdev.com/w/index.php/APU_DMC#Memory_reader
+        // TODO: Cover the cases that sleep for less time
+        if self.apu.borrow_mut().check_stall_cpu() {
+            self.cpu.borrow_mut().stall(4);
+        }
+
         self.ppu.borrow_mut().cpu_cycle();
-        self.cart.borrow_mut().cycle(); // TODO:
+        self.cart.borrow_mut().cycle(); // TODO: Probably per-ppu tick for some mappers
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
             self.cpu.borrow_mut().nmi();
