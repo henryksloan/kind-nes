@@ -112,7 +112,7 @@ impl NES {
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
             self.cpu.borrow_mut().nmi();
-        } else if self.cart.borrow_mut().check_irq() {
+        } else if self.cart.borrow_mut().check_irq() || self.apu.borrow_mut().check_irq() {
             self.cpu.borrow_mut().irq();
         }
     }

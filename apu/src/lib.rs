@@ -24,7 +24,6 @@ pub struct APU {
 
     irq_disable: bool,
     frame_irq: bool,
-    dmc_irq: bool,
 
     audio_buff: Vec<f32>,
 }
@@ -45,7 +44,6 @@ impl APU {
 
             irq_disable: false,
             frame_irq: false,
-            dmc_irq: false,
 
             audio_buff: Vec::new(),
         }
@@ -59,6 +57,11 @@ impl APU {
         let stall = self.dmc.stall_cpu;
         self.dmc.stall_cpu = false;
         stall
+    }
+
+    pub fn check_irq(&mut self) -> bool {
+        let out = self.dmc.irq || self.frame_irq;
+        out
     }
 
     pub fn reset(&mut self) {
@@ -143,7 +146,7 @@ impl Memory for APU {
     fn peek(&self, addr: u16) -> u8 {
         assert!(addr == 0x4015);
 
-        ((self.dmc_irq as u8) << 7)
+        ((self.dmc.irq as u8) << 7)
             | ((self.frame_irq as u8) << 6)
             | (((self.dmc.bytes_remaining > 0) as u8) << 4)
             | (((self.noise.length_counter.counter > 0) as u8) << 3)
@@ -166,7 +169,7 @@ impl Memory for APU {
         } else if 0x4010 <= addr && addr <= 0x4013 {
             self.dmc.update_register(addr - 0x4010, data);
         } else if addr == 0x4015 {
-            self.dmc_irq = false;
+            self.dmc.irq = false;
             self.pulse1.length_counter.update_enabled((data >> 0) & 1);
             self.pulse2.length_counter.update_enabled((data >> 1) & 1);
             self.triangle.length_counter.update_enabled((data >> 2) & 1);
@@ -196,6 +199,9 @@ impl Memory for APU {
                 self.frame_sequence_step = 0;
             };
             self.irq_disable = (data >> 6) & 1 == 1;
+            if self.irq_disable {
+                self.frame_irq = false;
+            }
         }
     }
 }
