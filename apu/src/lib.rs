@@ -2,8 +2,10 @@
 extern crate lazy_static;
 
 mod channels;
+mod filters;
 
 use channels::*;
+use filters::{Filter, HighPassFilter, LowPassFilter};
 use memory::Memory;
 
 use std::cell::RefCell;
@@ -18,6 +20,7 @@ pub struct APU {
     dmc: DMCChannel,
 
     clock_rate: u64,
+    sample_rate: u64,
     frame_counter_cycle: u64,
     frame_sequence_len: u8,
     frame_sequence_step: u8,
@@ -26,10 +29,13 @@ pub struct APU {
     frame_irq: bool,
 
     audio_buff: Vec<f32>,
+    filters: Vec<Box<dyn Filter>>,
 }
 
 impl APU {
     pub fn new() -> Self {
+        let clock_rate = 1789773;
+        let sample_rate = clock_rate / 96000;
         Self {
             pulse1: PulseChannel::new(false),
             pulse2: PulseChannel::new(true),
@@ -37,7 +43,8 @@ impl APU {
             noise: NoiseChannel::new(),
             dmc: DMCChannel::new(),
 
-            clock_rate: 1789773,
+            clock_rate: clock_rate,
+            sample_rate: sample_rate,
             frame_counter_cycle: 0,
             frame_sequence_len: 4,
             frame_sequence_step: 0,
@@ -46,6 +53,11 @@ impl APU {
             frame_irq: false,
 
             audio_buff: Vec::new(),
+            filters: vec![
+                Box::from(HighPassFilter::new(90.0, sample_rate as u32)),
+                Box::from(HighPassFilter::new(440.0, sample_rate as u32)),
+                Box::from(LowPassFilter::new(14000.0, sample_rate as u32)),
+            ],
         }
     }
 
@@ -113,14 +125,17 @@ impl APU {
             self.frame_sequence_step = (self.frame_sequence_step + 1) % self.frame_sequence_len;
         }
 
-        if self.frame_counter_cycle % (self.clock_rate / 96000) == 0 && self.audio_buff.len() < 4096
-        {
+        if self.frame_counter_cycle % self.sample_rate == 0 && self.audio_buff.len() < 4096 {
             let pulse_out =
                 PULSE_TABLE[self.pulse1.output() as usize + self.pulse2.output() as usize];
             let tnd_out = TND_TABLE[3 * self.triangle.output() as usize
                 + 2 * self.noise.output() as usize
                 + self.dmc.output() as usize];
-            self.audio_buff.push(pulse_out + tnd_out);
+            let signal = self
+                .filters
+                .iter_mut()
+                .fold(pulse_out + tnd_out, |acc, filter| filter.process(acc));
+            self.audio_buff.push(signal);
         }
 
         self.frame_counter_cycle += 1;
