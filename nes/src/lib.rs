@@ -23,7 +23,7 @@ use std::rc::Rc;
 pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
-    pub apu: Rc<RefCell<APU>>,
+    apu: Rc<RefCell<APU>>,
     cart: Rc<RefCell<Cartridge>>,
     joy1: Rc<RefCell<dyn Controller>>,
     joy2: Rc<RefCell<dyn Controller>>,
@@ -124,6 +124,10 @@ impl NES {
         } else {
             None
         }
+    }
+
+    pub fn take_audio_buff(&mut self) -> Vec<f32> {
+        self.apu.borrow_mut().take_audio_buff()
     }
 
     pub fn get_shift_strobe(&self) -> bool {
