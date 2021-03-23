@@ -308,9 +308,8 @@ impl PPU {
                 let patt_addr = base | (tile_index << 4) | y;
                 self.spr_data.registers[spr_num as usize].patt_shift[0] =
                     self.memory.read(patt_addr + 0);
-                // This second fetch is a peek - a temporary fix for MMC3
                 self.spr_data.registers[spr_num as usize].patt_shift[1] =
-                    self.memory.peek(patt_addr.wrapping_add(8));
+                    self.memory.read(patt_addr.wrapping_add(8));
             }
             6 => {
                 // Pattern table tile high (fetched alongside low to avoid repeating work)

@@ -7,6 +7,7 @@ mod mapper2;
 mod mapper3;
 mod mapper4;
 mod mapper7;
+mod mapper9;
 
 pub use self::mapper0::Mapper0;
 pub use self::mapper1::Mapper1;
@@ -14,6 +15,7 @@ pub use self::mapper2::Mapper2;
 pub use self::mapper3::Mapper3;
 pub use self::mapper4::Mapper4;
 pub use self::mapper7::Mapper7;
+pub use self::mapper9::Mapper9;
 
 pub trait Mapper: Memory {
     fn get_nametable_mirroring(&self) -> Option<Mirroring> {
