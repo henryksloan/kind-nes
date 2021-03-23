@@ -1,12 +1,21 @@
 [workspace]
 members = [
-    "sdl-ui",
     "nes",
     "cpu",
     "ppu",
     "apu",
     "memory",
+    "sdl-frontend",
+    "windows-ui",
 ]
 
-# [profile.release]
-# debug = true
+[profile.dev]
+opt-level = 3
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false

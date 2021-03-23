@@ -2,22 +2,22 @@ use crate::channels::{envelope::Envelope, length_counter::LengthCounter};
 
 // https://wiki.nesdev.com/w/index.php/APU_Pulse
 pub struct PulseChannel {
-    pub is_pulse2: bool,
-    pub even_latch: bool,
-    pub timer: u16,
-    pub timer_period: u16,
-    pub sequence_step: u8,
+    is_pulse2: bool,
+    even_latch: bool,
+    timer: u16,
+    timer_period: u16,
+    sequence_step: u8,
     pub length_counter: LengthCounter,
     pub envelope: Envelope,
 
-    pub duty_cycle_select: u8,
-    pub sweep_enable: bool,
-    pub sweep_timer: u8,
-    pub sweep_period: u8,
-    pub sweep_negate: bool,
-    pub sweep_shift: u8,
-    pub sweep_target_period: u16,
-    pub sweep_reset: bool,
+    duty_cycle_select: u8,
+    sweep_enable: bool,
+    sweep_timer: u8,
+    sweep_period: u8,
+    sweep_negate: bool,
+    sweep_shift: u8,
+    sweep_target_period: u16,
+    sweep_reset: bool,
 }
 
 impl PulseChannel {
@@ -47,10 +47,6 @@ impl PulseChannel {
             if self.timer > 0 {
                 self.timer -= 1;
             } else {
-                // TODO: Should this be plus 1?
-                // http://www.slack.net/~ant/nes-emu/apu_ref.txt
-                // "For the square and triangle channels, the third and fourth registers form an 11-bit
-                // value and the divider's period is set to this value *plus one*."
                 self.timer = self.timer_period;
                 self.sequence_step = (self.sequence_step + 1) % 8;
             }
@@ -66,9 +62,9 @@ impl PulseChannel {
                 // "Pulse 1 adds the ones' complement (−c − 1)
                 // Pulse 2 adds the two's complement (−c)"
                 change = !change;
-                change += self.is_pulse2 as u16;
+                change = change.wrapping_add(self.is_pulse2 as u16);
             }
-            self.timer_period + change
+            self.timer_period.wrapping_add(change)
         };
 
         // http://wiki.nesdev.com/w/index.php/APU_Sweep#Updating_the_period

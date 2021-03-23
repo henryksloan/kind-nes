@@ -1,12 +1,9 @@
 [package]
-name = "sdl-ui"
+name = "sdl-frontend"
 version = "0.1.0"
 authors = ["Henry Sloan <henryksloan@gmail.com>"]
 edition = "2018"
 
 [dependencies]
 nes = { path = "../nes" }
-cpu = { path = "../cpu" }
-memory = { path = "../memory" }
 sdl2 = "0.34.3"
-rand = "0.8.3"

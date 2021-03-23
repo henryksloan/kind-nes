@@ -2,14 +2,14 @@ use crate::channels::{envelope::Envelope, length_counter::LengthCounter};
 
 // https://wiki.nesdev.com/w/index.php/APU_Noise
 pub struct NoiseChannel {
-    pub even_latch: bool,
-    pub timer: u16,
-    pub timer_period: u16,
+    even_latch: bool,
+    timer: u16,
+    timer_period: u16,
     pub length_counter: LengthCounter,
     pub envelope: Envelope,
 
-    pub shift: u16,
-    pub shift_mode: bool,
+    shift: u16,
+    shift_mode: bool,
 }
 
 impl NoiseChannel {

@@ -65,6 +65,10 @@ impl Cartridge {
         })
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.mapper.is_none()
+    }
+
     pub fn get_nametable_mirroring(&self) -> Mirroring {
         let default = if let Some(some_meta) = &self.meta {
             some_meta.hardwired_mirroring
