@@ -67,6 +67,10 @@ impl CPU {
         self.pc = self.memory.read_u16(RST_VEC);
     }
 
+    pub fn stall(&mut self, stall_cycles: u32) {
+        self.wait_cycles += stall_cycles;
+    }
+
     pub fn tick(&mut self) -> Option<String> {
         let log_option = if self.wait_cycles > 0 {
             self.wait_cycles -= 1;

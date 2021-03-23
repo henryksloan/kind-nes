@@ -121,7 +121,7 @@ fn main() {
         }
 
         if let Some(framebuffer) = nes.get_new_frame() {
-            device.queue(&nes.apu.borrow_mut().take_audio_buff());
+            device.queue(&nes.take_audio_buff());
             if (frame_count + 1) % frames_per_rate_check == 0 {
                 if (frame_count + 1) % (frames_per_rate_check * checks_per_rate_report) == 0 {
                     canvas

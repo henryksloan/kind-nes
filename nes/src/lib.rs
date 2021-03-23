@@ -23,7 +23,7 @@ use std::rc::Rc;
 pub struct NES {
     cpu: Rc<RefCell<CPU>>,
     ppu: Rc<RefCell<PPU>>,
-    pub apu: Rc<RefCell<APU>>,
+    apu: Rc<RefCell<APU>>,
     cart: Rc<RefCell<Cartridge>>,
     joy1: Rc<RefCell<dyn Controller>>,
     joy2: Rc<RefCell<dyn Controller>>,
@@ -65,6 +65,7 @@ impl NES {
         cpu.borrow_mut().reset();
 
         ppu.borrow_mut().set_dma(cpu.clone());
+        apu.borrow_mut().set_dma(cpu.clone());
 
         Self {
             cpu,
@@ -83,6 +84,7 @@ impl NES {
                 self.cart.replace(new_cart);
                 self.cpu.borrow_mut().reset();
                 self.ppu.borrow_mut().reset();
+                self.apu.borrow_mut().reset();
                 Ok(())
             }
             Err(e) => Err(e),
@@ -98,13 +100,20 @@ impl NES {
         if let Some(log) = self.cpu.borrow_mut().tick() {
             println!("{}", log);
         }
+
         self.apu.borrow_mut().tick();
+        // https://wiki.nesdev.com/w/index.php/APU_DMC#Memory_reader
+        // TODO: Cover the cases that sleep for less time
+        if self.apu.borrow_mut().check_stall_cpu() {
+            self.cpu.borrow_mut().stall(4);
+        }
+
         self.ppu.borrow_mut().cpu_cycle();
-        self.cart.borrow_mut().cycle(); // TODO:
+        self.cart.borrow_mut().cycle(); // TODO: Probably per-ppu tick for some mappers
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
             self.cpu.borrow_mut().nmi();
-        } else if self.cart.borrow_mut().check_irq() {
+        } else if self.cart.borrow_mut().check_irq() || self.apu.borrow_mut().check_irq() {
             self.cpu.borrow_mut().irq();
         }
     }
@@ -116,6 +125,10 @@ impl NES {
         } else {
             None
         }
+    }
+
+    pub fn take_audio_buff(&mut self) -> Vec<f32> {
+        self.apu.borrow_mut().take_audio_buff()
     }
 
     pub fn get_shift_strobe(&self) -> bool {

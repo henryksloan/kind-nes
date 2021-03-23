@@ -2,9 +2,14 @@
 extern crate lazy_static;
 
 mod channels;
+mod filters;
 
 use channels::*;
+use filters::{Filter, HighPassFilter, LowPassFilter};
 use memory::Memory;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 // http://www.slack.net/~ant/nes-emu/apu_ref.txt
 pub struct APU {
@@ -15,19 +20,22 @@ pub struct APU {
     dmc: DMCChannel,
 
     clock_rate: u64,
+    sample_rate: u64,
     frame_counter_cycle: u64,
     frame_sequence_len: u8,
     frame_sequence_step: u8,
 
     irq_disable: bool,
     frame_irq: bool,
-    dmc_irq: bool,
 
     audio_buff: Vec<f32>,
+    filters: Vec<Box<dyn Filter>>,
 }
 
 impl APU {
     pub fn new() -> Self {
+        let clock_rate = 1789773;
+        let sample_rate = clock_rate / 96000;
         Self {
             pulse1: PulseChannel::new(false),
             pulse2: PulseChannel::new(true),
@@ -35,21 +43,56 @@ impl APU {
             noise: NoiseChannel::new(),
             dmc: DMCChannel::new(),
 
-            clock_rate: 1789773,
+            clock_rate: clock_rate,
+            sample_rate: sample_rate,
             frame_counter_cycle: 0,
             frame_sequence_len: 4,
             frame_sequence_step: 0,
 
             irq_disable: false,
             frame_irq: false,
-            dmc_irq: false,
 
             audio_buff: Vec::new(),
+            filters: vec![
+                Box::from(HighPassFilter::new(90.0, sample_rate as u32)),
+                Box::from(HighPassFilter::new(440.0, sample_rate as u32)),
+                Box::from(LowPassFilter::new(14000.0, sample_rate as u32)),
+            ],
         }
     }
 
+    pub fn set_dma(&mut self, dma: Rc<RefCell<dyn Memory>>) {
+        self.dmc.set_dma(dma);
+    }
+
+    pub fn check_stall_cpu(&mut self) -> bool {
+        let stall = self.dmc.stall_cpu;
+        self.dmc.stall_cpu = false;
+        stall
+    }
+
+    pub fn check_irq(&mut self) -> bool {
+        let out = self.dmc.irq || self.frame_irq;
+        out
+    }
+
     pub fn reset(&mut self) {
-        todo!()
+        // https://wiki.nesdev.com/w/index.php/CPU_power_up_state
+        self.pulse1.length_counter.update_enabled(0);
+        self.pulse2.length_counter.update_enabled(0);
+        self.triangle.length_counter.update_enabled(0);
+        self.triangle.sequence_step = 0;
+        self.noise.length_counter.update_enabled(0);
+        self.dmc.update_enabled(0);
+        self.dmc.dac_level &= 1;
+
+        self.frame_counter_cycle = 0;
+        self.frame_sequence_len = 4;
+        self.frame_sequence_step = 0;
+
+        self.dmc.irq = false;
+        self.irq_disable = false;
+        self.frame_irq = false;
     }
 
     pub fn tick(&mut self) {
@@ -60,12 +103,11 @@ impl APU {
         self.pulse2.tick();
         self.triangle.tick();
         self.noise.tick();
-        // self.dmc.tick();
+        self.dmc.tick();
 
         // The frame counter divides the clock to ~240 Hz
         // which feeds a variable-step sequencer, which controls
         // length counters, sweep units, envelopes, the linear counter, and interrupts
-        self.frame_counter_cycle += 1;
         if self.frame_counter_cycle % (self.clock_rate / 240) == 0 {
             // Do nothing on the last step of the 5-step sequence
             if self.frame_sequence_step != 4 {
@@ -94,17 +136,24 @@ impl APU {
                     self.frame_irq = true;
                 }
             }
+
+            self.frame_sequence_step = (self.frame_sequence_step + 1) % self.frame_sequence_len;
         }
 
-        if self.frame_counter_cycle % (self.clock_rate / 96000) == 0 && self.audio_buff.len() < 4096
-        {
+        if self.frame_counter_cycle % self.sample_rate == 0 && self.audio_buff.len() < 4096 {
             let pulse_out =
                 PULSE_TABLE[self.pulse1.output() as usize + self.pulse2.output() as usize];
-            // TODO: DMC
-            let tnd_out =
-                TND_TABLE[3 * self.triangle.output() as usize + 2 * self.noise.output() as usize];
-            self.audio_buff.push(pulse_out + tnd_out);
+            let tnd_out = TND_TABLE[3 * self.triangle.output() as usize
+                + 2 * self.noise.output() as usize
+                + self.dmc.output() as usize];
+            let signal = self
+                .filters
+                .iter_mut()
+                .fold(pulse_out + tnd_out, |acc, filter| filter.process(acc));
+            self.audio_buff.push(signal);
         }
+
+        self.frame_counter_cycle += 1;
     }
 
     pub fn take_audio_buff(&mut self) -> Vec<f32> {
@@ -127,9 +176,9 @@ impl Memory for APU {
     fn peek(&self, addr: u16) -> u8 {
         assert!(addr == 0x4015);
 
-        // TODO: D will read as 1 if the DMC bytes remaining is more than 0.
-        ((self.dmc_irq as u8) << 7)
+        ((self.dmc.irq as u8) << 7)
             | ((self.frame_irq as u8) << 6)
+            | (((self.dmc.bytes_remaining > 0) as u8) << 4)
             | (((self.noise.length_counter.counter > 0) as u8) << 3)
             | (((self.triangle.length_counter.counter > 0) as u8) << 2)
             | (((self.pulse2.length_counter.counter > 0) as u8) << 1)
@@ -148,42 +197,41 @@ impl Memory for APU {
         } else if 0x400C <= addr && addr <= 0x400F {
             self.noise.update_register(addr - 0x400C, data);
         } else if 0x4010 <= addr && addr <= 0x4013 {
-            // TODO
-            // self.dmc.update_register(addr - 0x4010, data);
+            self.dmc.update_register(addr - 0x4010, data);
         } else if addr == 0x4015 {
-            self.dmc_irq = false;
-            self.pulse1.length_counter.update_enabled(data >> 0 & 1);
-            self.pulse2.length_counter.update_enabled(data >> 1 & 1);
-            self.triangle.length_counter.update_enabled(data >> 2 & 1);
-            self.noise.length_counter.update_enabled(data >> 3 & 1);
-            // self.dmc.update_enabled(data >> 4 & 1);
+            self.dmc.irq = false;
+            self.pulse1.length_counter.update_enabled((data >> 0) & 1);
+            self.pulse2.length_counter.update_enabled((data >> 1) & 1);
+            self.triangle.length_counter.update_enabled((data >> 2) & 1);
+            self.noise.length_counter.update_enabled((data >> 3) & 1);
+            self.dmc.update_enabled((data >> 4) & 1);
         } else if addr == 0x4017 {
             // "If the mode flag is clear, the 4-step sequence is selected, otherwise the
             // 5-step sequence is selected and the sequencer is immediately clocked once."
             if data >> 7 == 1 {
                 self.frame_sequence_len = 5;
-                // self.frame_sequence_step = 1;
+                self.frame_sequence_step = 1;
 
-                if self.frame_sequence_step != 4 {
-                    self.pulse1.envelope.tick();
-                    self.pulse2.envelope.tick();
-                    self.noise.envelope.tick();
-                    self.noise.envelope.tick();
-                    self.triangle.tick_linear();
+                self.pulse1.tick();
+                self.pulse2.tick();
+                self.triangle.tick();
+                self.noise.tick();
 
-                    // TODO: These should be ticked, but it seems to make them go down too fast
-                    /* self.pulse1.length_counter.tick();
-                    self.pulse2.length_counter.tick();
-                    self.triangle.length_counter.tick();
-                    self.noise.length_counter.tick(); */
+                self.pulse1.length_counter.tick();
+                self.pulse2.length_counter.tick();
+                self.triangle.length_counter.tick();
+                self.noise.length_counter.tick();
 
-                    self.pulse1.tick_sweep();
-                    self.pulse2.tick_sweep();
-                }
+                self.pulse1.tick_sweep();
+                self.pulse2.tick_sweep();
             } else {
                 self.frame_sequence_len = 4;
+                self.frame_sequence_step = 0;
             };
             self.irq_disable = (data >> 6) & 1 == 1;
+            if self.irq_disable {
+                self.frame_irq = false;
+            }
         }
     }
 }
