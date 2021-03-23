@@ -1,18 +1,85 @@
+#![windows_subsystem = "windows"]
+
 use nes;
 use nes::NES;
+use std::cell::RefCell;
 
+use core::ffi::c_void;
 use std::env;
 use std::fs::File;
-use std::process;
 use std::thread;
 use std::time;
 
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use sdl2::audio::AudioSpecDesired;
+use sdl2::event::Event as SDL_Event;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::video::Window as SDL_Window;
+use sdl2_sys::SDL_CreateWindowFrom;
 
-use sdl2::audio::AudioSpecDesired;
+extern crate native_windows_derive as nwd;
+extern crate native_windows_gui as nwg;
+
+use nwd::NwgUi;
+use nwg::NativeUi;
+
+#[derive(Default, NwgUi)]
+pub struct BasicApp {
+    nes: RefCell<NES>,
+
+    #[nwg_control(size: (256 * 3, 240 * 3), position: (300, 300), title: "KindNES", flags: "WINDOW|VISIBLE")]
+    window: nwg::Window,
+
+    #[nwg_control(text: "File")]
+    file_menu: nwg::Menu,
+
+    #[nwg_control(text: "Open ROM", parent: file_menu)]
+    #[nwg_events( OnMenuItemSelected: [BasicApp::open_rom_dialog] )]
+    open_item: nwg::MenuItem,
+
+    #[nwg_control(parent: file_menu)]
+    exit_separator: nwg::MenuSeparator,
+
+    #[nwg_control(text: "Exit", parent: file_menu)]
+    #[nwg_events( OnMenuItemSelected: [BasicApp::exit] )]
+    exit_item: nwg::MenuItem,
+
+    #[nwg_resource(action: FileDialogAction::Open, title: "Open a .NES file")]
+    file_dialog: nwg::FileDialog,
+}
+
+impl BasicApp {
+    fn open_rom_dialog(&self) {
+        if self.file_dialog.run(Some(&self.window)) {
+            if let Ok(item) = self.file_dialog.get_selected_item() {
+                match File::open(&item) {
+                    Ok(file) => self.nes.borrow_mut().load_rom(file).unwrap_or_else(|err| {
+                        nwg::modal_error_message(
+                            &self.window,
+                            "Error loading ROM",
+                            &format!(
+                                "There was an error when loading the ROM in {:?}: {:?}",
+                                item, err
+                            ),
+                        );
+                    }),
+                    Err(err) => {
+                        nwg::modal_error_message(
+                            &self.window,
+                            "Error loading file",
+                            &format!("There was an error when loading {:?}: {:?}", item, err),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn exit(&self) {
+        nwg::stop_thread_dispatch();
+        std::process::exit(0);
+    }
+}
 
 const COLORS: &'static [i32] = &[
     0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00, 0x333500,
@@ -26,30 +93,35 @@ const COLORS: &'static [i32] = &[
 ];
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("usage: {} <NES ROM file>", args[0]);
-        process::exit(1);
-    }
-
-    let file = File::open(&args[1]).unwrap_or_else(|err| {
-        println!("failed to read file: {}", err);
-        process::exit(1);
-    });
-
-    let mut nes = NES::new();
-    nes.load_rom(file).unwrap_or_else(|err| {
-        println!("failed to load ROM: {}", err);
-        process::exit(1);
-    });
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem
-        .window("KindNES", (256.0 * 3.0) as u32, (240.0 * 3.0) as u32)
-        .position_centered()
-        .build()
-        .unwrap();
+
+    nwg::init().expect("Failed to init Native Windows GUI");
+    nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
+    let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
+
+    let [total_width, total_height] = [nwg::Monitor::width(), nwg::Monitor::height()];
+    let (width, height) = (256 * 3, 240 * 3);
+    let x = (total_width - width) / 2;
+    let y = (total_height - height) / 2;
+
+    app.window.set_position(x, y);
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() >= 2 {
+        match File::open(&args[1]) {
+            Ok(file) => app.nes.borrow_mut().load_rom(file).unwrap_or_else(|err| {
+                println!("failed to load ROM: {}", err);
+            }),
+            Err(err) => println!("failed to read file: {}", err),
+        }
+    }
+
+    let window = unsafe {
+        let window_raw =
+            SDL_CreateWindowFrom(app.window.handle.hwnd().unwrap() as *mut _ as *mut c_void);
+        SDL_Window::from_ll(video_subsystem, window_raw)
+    };
 
     let mut canvas = window.into_canvas().build().unwrap();
     canvas.set_scale(3.0, 3.0).unwrap();
@@ -96,16 +168,22 @@ fn main() {
 
     let mut fps_timer = time::Instant::now();
     loop {
-        nes.tick();
-
-        if nes.get_shift_strobe() || cycle_interrupt_timer == 0 {
+        if !app.nes.borrow().has_cartridge() {
             for event in event_pump.poll_iter() {
                 match event {
-                    Event::Quit { .. }
-                    | Event::KeyDown {
-                        keycode: Some(Keycode::Escape),
-                        ..
-                    } => std::process::exit(0),
+                    SDL_Event::Quit { .. } => std::process::exit(0),
+                    _ => {}
+                }
+            }
+            continue;
+        }
+
+        app.nes.borrow_mut().tick();
+
+        if app.nes.borrow().get_shift_strobe() || cycle_interrupt_timer == 0 {
+            for event in event_pump.poll_iter() {
+                match event {
+                    SDL_Event::Quit { .. } => std::process::exit(0),
                     _ => {}
                 }
             }
@@ -117,11 +195,14 @@ fn main() {
                 controller_byte <<= 1;
                 controller_byte |= bit;
             }
-            nes.try_fill_controller_shift(controller_byte);
+            app.nes
+                .borrow_mut()
+                .try_fill_controller_shift(controller_byte);
         }
 
-        if let Some(framebuffer) = nes.get_new_frame() {
-            device.queue(&nes.take_audio_buff());
+        let framebuffer_option = app.nes.borrow().get_new_frame();
+        if let Some(framebuffer) = framebuffer_option {
+            device.queue(&app.nes.borrow_mut().take_audio_buff());
             if (frame_count + 1) % frames_per_rate_check == 0 {
                 if (frame_count + 1) % (frames_per_rate_check * checks_per_rate_report) == 0 {
                     canvas

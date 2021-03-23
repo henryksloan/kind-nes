@@ -118,6 +118,10 @@ impl NES {
         }
     }
 
+    pub fn has_cartridge(&self) -> bool {
+        !self.cart.borrow().is_empty()
+    }
+
     pub fn get_new_frame(&self) -> Option<[[u8; 256]; 240]> {
         let ppu = self.ppu.borrow();
         if ppu.frame_ready {
@@ -140,5 +144,11 @@ impl NES {
         if joy1.get_shift_strobe() {
             joy1.set_state_shift(val);
         }
+    }
+}
+
+impl Default for NES {
+    fn default() -> Self {
+        NES::new()
     }
 }
