@@ -84,6 +84,7 @@ impl NES {
                 self.cart.replace(new_cart);
                 self.cpu.borrow_mut().reset();
                 self.ppu.borrow_mut().reset();
+                self.apu.borrow_mut().reset();
                 Ok(())
             }
             Err(e) => Err(e),

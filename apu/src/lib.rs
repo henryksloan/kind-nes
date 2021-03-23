@@ -77,7 +77,22 @@ impl APU {
     }
 
     pub fn reset(&mut self) {
-        todo!()
+        // https://wiki.nesdev.com/w/index.php/CPU_power_up_state
+        self.pulse1.length_counter.update_enabled(0);
+        self.pulse2.length_counter.update_enabled(0);
+        self.triangle.length_counter.update_enabled(0);
+        self.triangle.sequence_step = 0;
+        self.noise.length_counter.update_enabled(0);
+        self.dmc.update_enabled(0);
+        self.dmc.dac_level &= 1;
+
+        self.frame_counter_cycle = 0;
+        self.frame_sequence_len = 4;
+        self.frame_sequence_step = 0;
+
+        self.dmc.irq = false;
+        self.irq_disable = false;
+        self.frame_irq = false;
     }
 
     pub fn tick(&mut self) {
