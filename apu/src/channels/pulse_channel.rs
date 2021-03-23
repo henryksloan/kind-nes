@@ -62,9 +62,9 @@ impl PulseChannel {
                 // "Pulse 1 adds the ones' complement (−c − 1)
                 // Pulse 2 adds the two's complement (−c)"
                 change = !change;
-                change += self.is_pulse2 as u16;
+                change = change.wrapping_add(self.is_pulse2 as u16);
             }
-            self.timer_period + change
+            self.timer_period.wrapping_add(change)
         };
 
         // http://wiki.nesdev.com/w/index.php/APU_Sweep#Updating_the_period
