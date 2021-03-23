@@ -2,16 +2,15 @@ use crate::channels::length_counter::LengthCounter;
 
 // https://wiki.nesdev.com/w/index.php/APU_Triangle
 pub struct TriangleChannel {
-    pub timer: u16,
-    pub timer_period: u16,
+    timer: u16,
+    timer_period: u16,
     pub sequence_step: u8,
     pub length_counter: LengthCounter,
 
-    pub linear_enable: bool,
-    pub linear_control: bool,
+    linear_control: bool,
     pub linear_counter: u8,
-    pub linear_period: u8,
-    pub linear_reset: bool,
+    linear_period: u8,
+    linear_reset: bool,
 }
 
 impl TriangleChannel {
@@ -22,7 +21,6 @@ impl TriangleChannel {
             sequence_step: 0,
             length_counter: LengthCounter::new(),
 
-            linear_enable: false,
             linear_control: false,
             linear_counter: 0,
             linear_period: 0,

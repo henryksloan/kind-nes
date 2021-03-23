@@ -4,8 +4,8 @@ pub struct Envelope {
     pub loop_flag: bool,
     pub start: bool,
     pub period: u8, // Either the constant volume or envelope period
-    pub timer: u8,
-    pub decay_counter: u8,
+    timer: u8,
+    decay_counter: u8,
 }
 
 impl Envelope {

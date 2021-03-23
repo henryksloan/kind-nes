@@ -6,27 +6,27 @@ use std::rc::Rc;
 // https://wiki.nesdev.com/w/index.php/APU_DMC
 // TODO: Make fewer fields pub in all these structs
 pub struct DMCChannel {
-    pub enabled: bool,
-    pub even_latch: bool,
-    pub timer: u16,
-    pub timer_period: u16,
+    enabled: bool,
+    even_latch: bool,
+    timer: u16,
+    timer_period: u16,
 
-    pub irq_enable: bool,
+    irq_enable: bool,
     pub irq: bool,
-    pub loop_flag: bool,
+    loop_flag: bool,
     pub dac_level: u8,
-    pub sample_address: u16,
-    pub sample_len: u16,
+    sample_address: u16,
+    sample_len: u16,
 
-    pub dma_option: Option<Rc<RefCell<dyn Memory>>>,
-    pub dma_request: bool,
+    dma_option: Option<Rc<RefCell<dyn Memory>>>,
+    dma_request: bool,
     pub stall_cpu: bool,
-    pub sample_buffer: Option<u8>,
-    pub shift: u8,
-    pub dma_address: u16,
+    sample_buffer: Option<u8>,
+    shift: u8,
+    dma_address: u16,
     pub bytes_remaining: u16,
-    pub bits_remaining: u16,
-    pub silence: bool,
+    bits_remaining: u16,
+    silence: bool,
 }
 
 impl DMCChannel {
