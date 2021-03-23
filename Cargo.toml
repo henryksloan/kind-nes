@@ -1,11 +1,12 @@
 [workspace]
 members = [
-    "sdl-ui",
     "nes",
     "cpu",
     "ppu",
     "apu",
     "memory",
+    "sdl-frontend",
+    "windows-ui",
 ]
 
 # [profile.release]
