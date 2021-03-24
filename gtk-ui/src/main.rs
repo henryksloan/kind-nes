@@ -7,13 +7,18 @@ extern crate gio;
 extern crate glib;
 extern crate gtk;
 
+use gdk::Window as GdkWindow;
 use gio::prelude::*;
 use glib::clone;
 use gtk::prelude::*;
 use gtk::AboutDialog;
+use gtk::DrawingArea;
+use gtk::DrawingAreaBuilder;
+use gtk_sys::gtk_widget_set_size_request;
+use std::fs::File;
 
 use sdl2::video::Window as SDL_Window;
-use sdl2_sys::SDL_CreateWindowFrom;
+use sdl2_sys::{SDL_CreateWindowFrom, SDL_Quit};
 
 use core::ffi::c_void;
 use std::cell::RefCell;
@@ -22,6 +27,10 @@ use std::rc::Rc;
 
 use nes::NES;
 use sdl_frontend::SDLFrontend;
+
+extern "C" {
+    fn gdk_win32_window_get_handle(window: GdkWindow) -> *mut c_void;
+}
 
 fn build_system_menu(application: &gtk::Application) {
     let menu = gio::Menu::new();
@@ -56,6 +65,7 @@ fn add_actions(
     application: &gtk::Application,
     switch: &gtk::Switch,
     label: &gtk::Label,
+    drawing_area: &gtk::DrawingArea,
     window: &gtk::ApplicationWindow,
 ) {
     // Thanks to this method, we can say that this item is actually a checkbox.
@@ -126,41 +136,78 @@ fn add_accelerators(application: &gtk::Application) {
 fn build_ui(application: &gtk::Application) {
     let window = gtk::ApplicationWindow::new(application);
 
-    window.set_title("System menu bar");
-    window.set_border_width(10);
+    window.set_title("KindNES");
+    // window.set_border_width(10);
     window.set_position(gtk::WindowPosition::Center);
-    window.set_default_size(350, 70);
+    window.set_default_size(256 * 3, 240 * 3);
 
-    let v_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let v_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let label = gtk::Label::new(Some("Nothing happened yet"));
     let switch = gtk::Switch::new();
+    let area = DrawingAreaBuilder::new()
+        .width_request(256 * 3)
+        .height_request(240 * 3)
+        .can_focus(true)
+        .is_focus(true)
+        .has_focus(true)
+        // .expand(false)
+        // .opacity(0.05)
+        // .hexpand(false)
+        // .hexpand_set(false)
+        // .vexpand(false)
+        // .vexpand_set(false)
+        .build();
+    // gtk_widget_set_size_request((area as gtk_sys::GtkWidget).into_ptr(), 256 * 3, 240 * 3);
 
     v_box.pack_start(&label, false, false, 0);
     v_box.pack_start(&switch, true, true, 0);
+    v_box.pack_start(&area, false, false, 0);
+    // window.add(&area);
     window.add(&v_box);
 
     build_system_menu(application);
 
     add_actions(application, &switch, &label, &window);
 
-    window.show_all();
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let sdl_window = unsafe {
-        let window_raw = SDL_CreateWindowFrom(&mut window.get_id() as *mut u32 as *mut c_void);
+    window.show_all();
+
+    let wind = area.get_parent_window().unwrap();
+    let mut sdl_window = unsafe {
+        // let window_raw = SDL_CreateWindowFrom(&mut window.get_id() as *mut u32 as *mut c_void);
+        // let window_raw = SDL_CreateWindowFrom(gdk_win32_window_get_handle(gtk_widget_get_window(window));
+        // let window_raw = SDL_CreateWindowFrom(gdk_win32_window_get_handle(wind));
+        let window_raw =
+            SDL_CreateWindowFrom(gdk_win32_window_get_handle(area.get_window().unwrap()));
         SDL_Window::from_ll(video_subsystem, window_raw)
     };
+    // sdl_window.set_size(256 * 3, 240 * 3);
+    // sdl_window.set_maximum_size(256 * 3, 240 * 3);
 
-    let mut sdl_frontend =
-        SDLFrontend::new(sdl_context, sdl_window, Rc::new(RefCell::new(NES::new())));
-    sdl_frontend.render_loop();
+    let mut nes = NES::new();
+    nes.load_rom(File::open("D:\\Henry\\ROMs\\NES\\Contra (U).nes").unwrap())
+        .unwrap();
+    let mut sdl_frontend = SDLFrontend::new(sdl_context, sdl_window, Rc::new(RefCell::new(nes)));
+    sdl_frontend.render_loop_with_callback(|| {
+        // while gtk::events_pending() {
+        gtk::main_iteration_do(false);
+        // }
+    });
+    println!("Done?");
+    //SDL_DestroyWindow(sdl_window);
+    unsafe {
+        SDL_Quit();
+    }
+    while gtk::events_pending() {
+        gtk::main_iteration();
+    }
 }
 
 fn main() {
     let application = gtk::Application::new(
-        Some("com.github.gtk-rs.examples.menu_bar_system"),
+        Some("com.github.henryksloan.kind-nes.gtk-ui"),
         Default::default(),
     )
     .expect("Initialization failed...");

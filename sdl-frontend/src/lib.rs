@@ -40,6 +40,13 @@ impl SDLFrontend {
     }
 
     pub fn render_loop(&mut self) {
+        self.render_loop_with_callback(|| {});
+    }
+
+    pub fn render_loop_with_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(),
+    {
         self.canvas.set_scale(3.0, 3.0).unwrap();
         let mut event_pump = self.sdl_context.event_pump().unwrap();
 
@@ -83,7 +90,8 @@ impl SDLFrontend {
         let cycles_per_interrupt = 50_000;
 
         let mut fps_timer = time::Instant::now();
-        loop {
+        let mut done = false;
+        while !done {
             if !self.nes.borrow().has_cartridge() {
                 for event in event_pump.poll_iter() {
                     match event {
@@ -97,9 +105,10 @@ impl SDLFrontend {
             self.nes.borrow_mut().tick();
 
             if self.nes.borrow().get_shift_strobe() || cycle_interrupt_timer == 0 {
+                callback();
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => done = true, // std::process::exit(0),
                         _ => {}
                     }
                 }

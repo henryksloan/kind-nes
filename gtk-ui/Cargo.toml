@@ -8,6 +8,8 @@ edition = "2018"
 nes = { path = "../nes" }
 sdl-frontend = { path = "../sdl-frontend" }
 glib = "0.10.3"
+gdk = "0.13.2"
+gtk-sys = "0.10.0"
 sdl2 = "0.34.3"
 sdl2-sys = "0.34.3"
 
