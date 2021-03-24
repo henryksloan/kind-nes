@@ -24,13 +24,13 @@ const COLORS: &'static [i32] = &[
     0x000000,
 ];
 
-pub struct SDLFrontend {
+pub struct SDLUI {
     sdl_context: Sdl,
     canvas: WindowCanvas,
     nes: Rc<RefCell<NES>>,
 }
 
-impl SDLFrontend {
+impl SDLUI {
     pub fn new(sdl_context: Sdl, window: Window, nes: Rc<RefCell<NES>>) -> Self {
         Self {
             sdl_context,
