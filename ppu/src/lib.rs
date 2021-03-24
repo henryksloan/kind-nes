@@ -292,7 +292,12 @@ impl PPU {
 
                 let flip_v = self.oam2[4 * (spr_num as usize) + 2] >> 7 == 1;
                 if flip_v {
-                    y = self.registers.ppuctrl.get_sprite_height() - 1 - y;
+                    y = self
+                        .registers
+                        .ppuctrl
+                        .get_sprite_height()
+                        .wrapping_sub(1)
+                        .wrapping_sub(y);
                 }
                 if self
                     .registers
