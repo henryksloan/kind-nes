@@ -1,0 +1,13 @@
+[package]
+name = "imgui-ui"
+version = "0.1.0"
+authors = ["Henry Sloan <henryksloan@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nes = { path = "../nes" }
+sdl2 = "0.34.3"
+imgui = "0.7"
+imgui-sdl2 = "0.14.0"
+imgui-opengl-renderer = "0.11"
+gl = "0.10.0"
