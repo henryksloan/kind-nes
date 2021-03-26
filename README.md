@@ -13,9 +13,7 @@ Either give a .NES ROM file as a command line argument, or use the File > Open R
 | Select | Right shift |
 
 # Downloads
-*WIP*
-
-Downloads will be available via Github releases as soon as all platforms have a packaged MVP.
+Downloads can be found on the [releases page](https://github.com/henryksloan/kind-nes/releases). Currently, only the Windows version is packaged, so users of other platforms should build KindNES as described below. There are plans for Linux (AppImage) packages in the near future, and eventually MacOS packages.
 
 # Building
 ## Dependencies
