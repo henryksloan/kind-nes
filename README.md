@@ -1,6 +1,17 @@
 # KindNES
 KindNES is a reasonably accurate NES emulator written in Rust. It strives for portability, performance, and a balance of hardware accuracy and codebase clarity. The code should pair well with [NESdev](https://wiki.nesdev.com/) as a resource for learning about the NES.
 
+### Usage
+Either give a .NES ROM file as a command line argument, or use the File > Open ROM menu bar option (currently only on the Windows version).
+
+| Button | Key |
+| --- | --- |
+| D-Pad | Arrow keys |
+| A button | X |
+| B button | Z |
+| Start | Enter |
+| Select | Right shift |
+
 # Downloads
 *WIP*
 
@@ -74,3 +85,4 @@ KindNES supports most of the common NES mappers, meaning that it supports the ma
     - Step-in debugger
         - A GDB-style command prompt would be awesome
 - Cheats
+- TAS creation

@@ -59,7 +59,7 @@ impl Mapper4 {
     ) -> Self {
         Self {
             n_prg_banks,
-            n_chr_banks: std::cmp::max(n_prg_banks, 1),
+            n_chr_banks: std::cmp::max(n_chr_banks, 1),
             prg_rom: prg_data,
             prg_ram: vec![0; 0x2000],
             chr_mem: if n_chr_banks == 0 {
