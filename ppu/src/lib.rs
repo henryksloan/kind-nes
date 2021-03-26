@@ -76,7 +76,9 @@ impl PPU {
             if self.scan.on_idle_cycle() {
                 // Idle
             } else if self.scan.on_bg_fetch_cycle() {
-                self.bg_fetch((self.scan.cycle - 1) % 8);
+                if self.registers.ppumask.is_rendering() {
+                    self.bg_fetch((self.scan.cycle - 1) % 8);
+                }
             } else if self.scan.cycle == 257 && self.registers.ppumask.is_rendering() {
                 // https://wiki.nesdev.com/w/index.php/PPU_scrolling#At_dot_257_of_each_scanline
                 self.registers
@@ -84,7 +86,11 @@ impl PPU {
                     .copy_horizontal(&self.registers.temp_addr);
             }
 
-            if self.scan.on_spr_fetch_cycle() {
+            if self.scan.cycle == 257 {
+                self.spr_data.spr_nums = self.spr_data.spr_nums_next;
+            }
+
+            if self.scan.on_spr_fetch_cycle() && self.registers.ppumask.is_rendering() {
                 self.spr_fetch((self.scan.cycle - 257) / 8, (self.scan.cycle - 1) % 8);
             }
         }
@@ -254,7 +260,8 @@ impl PPU {
                 // Garbage nametable byte
             }
             2 => {
-                self.spr_data.registers[spr_num as usize].num = spr_num;
+                self.spr_data.registers[spr_num as usize].num =
+                    self.spr_data.spr_nums[spr_num as usize] as u16;
                 self.spr_data.registers[spr_num as usize].attr_latch =
                     self.oam2[4 * (spr_num as usize) + 2];
             }
@@ -276,7 +283,10 @@ impl PPU {
                     }
                 }
                 if !any_good {
+                    self.spr_data.registers[spr_num as usize].is_dummy = true;
                     y = 0;
+                } else {
+                    self.spr_data.registers[spr_num as usize].is_dummy = false;
                 }
 
                 let mut tile_index = self.oam2[4 * (spr_num as usize) + 1] as u16;
@@ -292,7 +302,12 @@ impl PPU {
 
                 let flip_v = self.oam2[4 * (spr_num as usize) + 2] >> 7 == 1;
                 if flip_v {
-                    y = self.registers.ppuctrl.get_sprite_height() - 1 - y;
+                    y = self
+                        .registers
+                        .ppuctrl
+                        .get_sprite_height()
+                        .wrapping_sub(1)
+                        .wrapping_sub(y);
                 }
                 if self
                     .registers
@@ -331,6 +346,8 @@ impl PPU {
                 let y = self.oam[4 * self.spr_data.spr_num as usize] as u16;
                 if self.spr_data.oam2_index < 8 {
                     self.oam2[4 * self.spr_data.oam2_index as usize] = y as u8;
+                    self.spr_data.spr_nums_next[self.spr_data.oam2_index as usize] =
+                        self.spr_data.spr_num;
                     if y <= self.scan.line
                         && self.scan.line
                             < y.wrapping_add(self.registers.ppuctrl.get_sprite_height())
@@ -449,7 +466,7 @@ impl PPU {
         // https://wiki.nesdev.com/w/index.php/PPU_rendering#Preface
         let mut pixel_option = None;
         for sprite_registers in &mut self.spr_data.registers {
-            if sprite_registers.x_counter != 0 {
+            if sprite_registers.x_counter != 0 || sprite_registers.is_dummy {
                 continue;
             }
 

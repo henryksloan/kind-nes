@@ -2,10 +2,12 @@
 pub struct SpriteData {
     pub registers: [SpriteRegisters; 8],
     pub eval_state: SpriteEvalState,
-    pub spr_num: u8,    // "sprite n (0-63)"
-    pub byte_num: u8,   // "byte m (0-3)"
-    pub oam_byte: u8,   // Filled on odd cycles
-    pub oam2_index: u8, // Number of sprites found on this line.
+    pub spr_nums: [u8; 8],      // The OAM sprite indices of each OAM2 sprite
+    pub spr_nums_next: [u8; 8], // The indices of sprites being evaluated
+    pub spr_num: u8,            // "sprite n (0-63)"
+    pub byte_num: u8,           // "byte m (0-3)"
+    pub oam_byte: u8,           // Filled on odd cycles
+    pub oam2_index: u8,         // Number of sprites found on this line.
 }
 
 impl SpriteData {
@@ -13,6 +15,8 @@ impl SpriteData {
         Self {
             registers: [SpriteRegisters::new(); 8],
             eval_state: SpriteEvalState::CopyY,
+            spr_nums: [0xFF; 8],
+            spr_nums_next: [0xFF; 8],
             spr_num: 0,
             byte_num: 0,
             oam_byte: 0,
@@ -22,6 +26,8 @@ impl SpriteData {
 
     pub fn reset(&mut self) {
         self.eval_state = SpriteEvalState::CopyY;
+        self.spr_nums = [0xFF; 8];
+        self.spr_nums_next = [0xFF; 8];
         self.spr_num = 0;
         self.byte_num = 0;
         self.oam_byte = 0;
@@ -35,6 +41,7 @@ pub struct SpriteRegisters {
     pub patt_shift: [u8; 2],
     pub attr_latch: u8,
     pub x_counter: u8,
+    pub is_dummy: bool,
 }
 
 impl SpriteRegisters {
@@ -44,6 +51,7 @@ impl SpriteRegisters {
             patt_shift: [0; 2],
             attr_latch: 0,
             x_counter: 0,
+            is_dummy: false,
         }
     }
 }

@@ -1,8 +1,8 @@
 pub struct Scan {
     pub line: u16,
     pub cycle: u16,
-    pub total_cycles: u32,
-    pub total_frames: u32,
+    pub total_cycles: u64,
+    pub total_frames: u64,
     odd_frame: bool,
 }
 

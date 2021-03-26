@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 // https://wiki.nesdev.com/w/index.php/APU_DMC
-// TODO: Make fewer fields pub in all these structs
 pub struct DMCChannel {
     enabled: bool,
     even_latch: bool,

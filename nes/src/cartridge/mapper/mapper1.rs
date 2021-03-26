@@ -72,8 +72,8 @@ impl Mapper for Mapper1 {
         // TODO: Different RAM sizes
         if self.chr_mem_is_ram {
             self.chr_mem = vec![0; 0x2000];
-            self.prg_ram = vec![0; 0x2000];
         }
+        self.prg_ram = vec![0; 0x2000];
     }
 }
 
@@ -94,43 +94,49 @@ impl Memory for Mapper1 {
         if addr <= 0x0FFF {
             let chr_bank_mode = self.control_register >> 4;
             let base = if chr_bank_mode == 0 {
-                0x2000 * ((self.chr_bank_0 as usize) >> 1)
+                0x2000 * ((self.chr_bank_0 as usize) & 0b11110)
             } else {
                 0x1000 * (self.chr_bank_0 as usize)
             };
 
-            return self.chr_mem[base + (addr as usize)];
+            let len = self.chr_mem.len();
+            self.chr_mem[(base + (addr as usize)) % len]
         } else if 0x1000 <= addr && addr <= 0x1FFF {
             let chr_bank_mode = self.control_register >> 4;
             let base = if chr_bank_mode == 0 {
-                0x1000 + 0x2000 * ((self.chr_bank_0 as usize) >> 1)
+                0x1000 + 0x2000 * ((self.chr_bank_0 as usize) & 0b11110)
             } else {
                 0x1000 * (self.chr_bank_1 as usize)
             };
 
-            self.chr_mem[base + ((addr as usize) - 0x1000)]
+            let len = self.chr_mem.len();
+            self.chr_mem[(base + ((addr as usize) - 0x1000)) % len]
         } else if 0x8000 <= addr && addr <= 0xBFFF {
             let prg_bank_mode = (self.control_register & 0b1100) >> 2;
             let base = if prg_bank_mode == 0 || prg_bank_mode == 1 {
-                0x8000 * (((self.prg_bank >> 1) as usize) & 0b111)
+                0x8000 * ((self.prg_bank as usize) & 0b1110)
             } else if prg_bank_mode == 2 {
                 0x0000
             } else {
                 0x4000 * ((self.prg_bank as usize) & 0b1111)
             };
 
-            self.prg_rom[base + ((addr as usize) - 0x8000)]
-        } else {
+            let len = self.prg_rom.len();
+            self.prg_rom[(base + ((addr as usize) - 0x8000)) % len]
+        } else if 0xC000 <= addr {
             let prg_bank_mode = (self.control_register & 0b1100) >> 2;
             let base = if prg_bank_mode == 0 || prg_bank_mode == 1 {
-                0x4000 + 0x8000 * (((self.prg_bank >> 1) as usize) & 0b111)
+                0x4000 + 0x8000 * ((self.prg_bank as usize) & 0b1110)
             } else if prg_bank_mode == 2 {
                 0x4000 * ((self.prg_bank as usize) & 0b1111)
             } else {
                 0x4000 * ((self.n_prg_banks as usize) - 1)
             };
 
-            self.prg_rom[base + ((addr as usize) - 0xC000)]
+            let len = self.prg_rom.len();
+            self.prg_rom[(base + ((addr as usize) - 0xC000)) % len]
+        } else {
+            0
         }
     }
 
@@ -138,22 +144,24 @@ impl Memory for Mapper1 {
         if addr <= 0x0FFF && self.chr_mem_is_ram {
             let chr_bank_mode = self.control_register >> 4;
             let base = if chr_bank_mode == 0 {
-                0x2000 * ((self.chr_bank_0 as usize) >> 1)
+                0x2000 * ((self.chr_bank_0 as usize) & 0b11110)
             } else {
                 0x1000 * (self.chr_bank_0 as usize)
             };
 
-            self.chr_mem[base + (addr as usize)] = data;
+            let len = self.chr_mem.len();
+            self.chr_mem[(base + (addr as usize)) % len] = data;
             return;
         } else if 0x1000 <= addr && addr <= 0x1FFF && self.chr_mem_is_ram {
             let chr_bank_mode = self.control_register >> 4;
             let base = if chr_bank_mode == 0 {
-                0x1000 + 0x2000 * ((self.chr_bank_0 as usize) >> 1)
+                0x1000 + 0x2000 * ((self.chr_bank_0 as usize) & 0b11110)
             } else {
                 0x1000 * (self.chr_bank_1 as usize)
             };
 
-            self.chr_mem[base + ((addr as usize) - 0x1000)] = data;
+            let len = self.chr_mem.len();
+            self.chr_mem[(base + ((addr as usize) - 0x1000)) % len] = data;
             return;
         } else if 0x4020 <= addr && addr <= 0x5FFF {
             return;

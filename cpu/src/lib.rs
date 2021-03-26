@@ -33,7 +33,7 @@ pub struct CPU {
 
     pc: u16, // Program counter
     wait_cycles: u32,
-    cycles: usize,
+    cycles: u64,
     pub log: bool,
 
     memory: Box<dyn Memory>,

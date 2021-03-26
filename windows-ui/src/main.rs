@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
 use nes::NES;
-use sdl_frontend::SDLFrontend;
+use sdl_ui::SDLUI;
 
 use core::ffi::c_void;
 use std::cell::RefCell;
@@ -107,6 +107,6 @@ fn main() {
         SDL_Window::from_ll(video_subsystem, window_raw)
     };
 
-    let mut sdl_frontend = SDLFrontend::new(sdl_context, window, app.nes.clone());
-    sdl_frontend.render_loop();
+    let mut sdl_ui = SDLUI::new(sdl_context, window, app.nes.clone());
+    sdl_ui.render_loop();
 }

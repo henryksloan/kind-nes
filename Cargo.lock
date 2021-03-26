@@ -185,7 +185,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdl-frontend"
+name = "sdl-ui"
 version = "0.1.0"
 dependencies = [
  "nes",
@@ -307,7 +307,7 @@ dependencies = [
  "native-windows-gui",
  "nes",
  "rand",
- "sdl-frontend",
+ "sdl-ui",
  "sdl2",
  "sdl2-sys",
 ]

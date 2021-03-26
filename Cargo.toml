@@ -5,7 +5,7 @@ members = [
     "ppu",
     "apu",
     "memory",
-    "sdl-frontend",
+    "sdl-ui",
     "windows-ui",
 ]
 
