@@ -2,7 +2,7 @@ use crate::cartridge::Mapper;
 use crate::cartridge::Mirroring;
 use memory::Memory;
 
-// https://wiki.nesdev.com/w/index.php/INES_Mapper_003
+// https://wiki.nesdev.com/w/index.php/AxROM
 pub struct Mapper7 {
     n_prg_banks: u16,
     prg_rom: Vec<u8>,
@@ -11,7 +11,11 @@ pub struct Mapper7 {
     mirroring: Mirroring,
 }
 
-impl Mapper for Mapper7 {}
+impl Mapper for Mapper7 {
+    fn get_nametable_mirroring(&self) -> Option<Mirroring> {
+        Some(self.mirroring)
+    }
+}
 
 impl Mapper7 {
     pub fn new(n_prg_banks: u16, prg_data: Vec<u8>) -> Self {

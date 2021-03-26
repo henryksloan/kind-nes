@@ -19,7 +19,11 @@ pub struct Mapper9 {
     mirroring: Mirroring,
 }
 
-impl Mapper for Mapper9 {}
+impl Mapper for Mapper9 {
+    fn get_nametable_mirroring(&self) -> Option<Mirroring> {
+        Some(self.mirroring)
+    }
+}
 
 impl Mapper9 {
     pub fn new(n_prg_banks: u16, prg_data: Vec<u8>, chr_data: Vec<u8>) -> Self {
