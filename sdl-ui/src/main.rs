@@ -18,7 +18,7 @@ fn main() {
         process::exit(1);
     });
 
-    let mut nes = Rc::new(RefCell::new(NES::new()));
+    let nes = Rc::new(RefCell::new(NES::new()));
     nes.borrow_mut().load_rom(file).unwrap_or_else(|err| {
         println!("failed to load ROM: {}", err);
         process::exit(1);
