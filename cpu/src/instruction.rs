@@ -88,6 +88,7 @@ lazy_static! {
         add("TYA", vec![(0x98, IMP, 2)]);
 
         // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
+        // TODO: http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
         add("*NOP", vec![(0x80, IMM, 2),
                         (0x82, IMM, 2), (0xC2, IMM, 2), (0xE2, IMM, 2),
                         (0x04, ZER, 3), (0x44, ZER, 3), (0x64, ZER, 3),

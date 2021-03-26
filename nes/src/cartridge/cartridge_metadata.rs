@@ -23,6 +23,7 @@ pub struct CartridgeMetadata {
 
 impl CartridgeMetadata {
     pub fn from_header(header: Vec<u8>) -> Result<Self, &'static str> {
+        // TODO: Some garbage data in iNES 1.0 headers breaks this parsing
         if header[0..=3] != [b'N', b'E', b'S', 0x1A] {
             return Err("header does not begin with NES<EOF> identifier");
         }
