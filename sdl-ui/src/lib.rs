@@ -99,11 +99,11 @@ impl SDLUI {
         let cycles_per_interrupt = 50_000;
 
         let mut fps_timer = time::Instant::now();
-        loop {
+        'main_loop: loop {
             if !self.nes.borrow().has_cartridge() {
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => break 'main_loop,
                         _ => {}
                     }
                 }
@@ -113,7 +113,7 @@ impl SDLUI {
             if self.nes.borrow().paused {
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => break 'main_loop,
                         _ => {}
                     }
                 }
@@ -153,7 +153,7 @@ impl SDLUI {
             if self.nes.borrow().get_shift_strobe() || cycle_interrupt_timer == 0 {
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => break 'main_loop,
                         _ => {}
                     }
                 }
@@ -161,14 +161,14 @@ impl SDLUI {
                 let joy_x = controller.axis(Axis::LeftX);
                 let joy_y = controller.axis(Axis::LeftY);
                 let joy_input = vec![
-                    joy_x > DEAD_ZONE,                // Right
-                    joy_x < -DEAD_ZONE,               // Left
-                    joy_y > DEAD_ZONE,                // Down
-                    joy_y < -DEAD_ZONE,               // Up
-                    controller.button(Button::Start), // Start
-                    controller.button(Button::Back),  // Select
-                    controller.button(Button::B),     // B
-                    controller.button(Button::A),     // A
+                    joy_x > DEAD_ZONE || controller.button(Button::DPadRight), // Right
+                    joy_x < -DEAD_ZONE || controller.button(Button::DPadLeft), // Left
+                    joy_y > DEAD_ZONE || controller.button(Button::DPadDown),  // Down
+                    joy_y < -DEAD_ZONE || controller.button(Button::DPadUp),   // Up
+                    controller.button(Button::Start),                          // Start
+                    controller.button(Button::Back),                           // Select
+                    controller.button(Button::B),                              // B
+                    controller.button(Button::A),                              // A
                 ];
 
                 let mut controller_byte = 0;
