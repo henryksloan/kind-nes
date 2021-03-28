@@ -6,6 +6,7 @@ use std::thread;
 use std::time;
 
 use sdl2::audio::AudioSpecDesired;
+use sdl2::controller::{Axis, Button};
 use sdl2::event::Event as SDL_Event;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::PixelFormatEnum;
@@ -40,6 +41,20 @@ impl SDLUI {
     }
 
     pub fn render_loop(&mut self) {
+        let game_controller_subsystem = self.sdl_context.game_controller().unwrap();
+        let available = game_controller_subsystem
+            .num_joysticks()
+            .map_err(|e| format!("can't enumerate joysticks: {}", e))
+            .unwrap();
+        let controller = (0..available)
+            .find_map(|id| {
+                if !game_controller_subsystem.is_game_controller(id) {
+                    return None;
+                }
+                game_controller_subsystem.open(id).ok()
+            })
+            .expect("Couldn't open any controller");
+
         self.canvas.set_scale(3.0, 3.0).unwrap();
         self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
         let mut event_pump = self.sdl_context.event_pump().unwrap();
@@ -142,11 +157,24 @@ impl SDLUI {
                         _ => {}
                     }
                 }
+                const DEAD_ZONE: i16 = 10_000;
+                let joy_x = controller.axis(Axis::LeftX);
+                let joy_y = controller.axis(Axis::LeftY);
+                let joy_input = vec![
+                    joy_x > DEAD_ZONE,                // Right
+                    joy_x < -DEAD_ZONE,               // Left
+                    joy_y > DEAD_ZONE,                // Down
+                    joy_y < -DEAD_ZONE,               // Up
+                    controller.button(Button::Start), // Start
+                    controller.button(Button::Back),  // Select
+                    controller.button(Button::B),     // B
+                    controller.button(Button::A),     // A
+                ];
 
                 let mut controller_byte = 0;
                 let kb_state = event_pump.keyboard_state();
-                for scancode in &controls {
-                    let bit = kb_state.is_scancode_pressed(*scancode) as u8;
+                for i in 0..controls.len() {
+                    let bit = (kb_state.is_scancode_pressed(controls[i]) || joy_input[i]) as u8;
                     controller_byte <<= 1;
                     controller_byte |= bit;
                 }
@@ -178,14 +206,9 @@ impl SDLUI {
                         let c = COLORS[(color as usize) % 64];
                         let (r, g, b) =
                             ((c >> 16) as u8, ((c >> 8) & 0xFF) as u8, (c & 0xFF) as u8);
-                        if screen_buff[pixel_i + 0] != r
-                            || screen_buff[pixel_i + 1] != g
-                            || screen_buff[pixel_i + 2] != b
-                        {
-                            screen_buff[pixel_i + 0] = r;
-                            screen_buff[pixel_i + 1] = g;
-                            screen_buff[pixel_i + 2] = b;
-                        }
+                        screen_buff[pixel_i + 0] = r;
+                        screen_buff[pixel_i + 1] = g;
+                        screen_buff[pixel_i + 2] = b;
                         pixel_i += 3;
                     }
                 }
