@@ -41,6 +41,7 @@ impl SDLUI {
 
     pub fn render_loop(&mut self) {
         self.canvas.set_scale(3.0, 3.0).unwrap();
+        self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
         let mut event_pump = self.sdl_context.event_pump().unwrap();
 
         let creator = self.canvas.texture_creator();
@@ -94,6 +95,44 @@ impl SDLUI {
                 continue;
             }
 
+            if self.nes.borrow().paused {
+                for event in event_pump.poll_iter() {
+                    match event {
+                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        _ => {}
+                    }
+                }
+
+                // Draw the game screen below a gray tint and a pause icon (two parallel lines)
+                self.canvas.copy(&texture, None, None).unwrap();
+                self.canvas
+                    .set_draw_color(sdl2::pixels::Color::RGBA(50, 50, 50, 215));
+                let canvas_size = self.canvas.output_size().unwrap();
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(0, 0, canvas_size.0, canvas_size.1))
+                    .unwrap();
+                self.canvas
+                    .set_draw_color(sdl2::pixels::Color::RGB(225, 25, 25));
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(
+                        ((canvas_size.0 / 6) - 13) as i32,
+                        ((canvas_size.1 / 6) - 15) as i32,
+                        10,
+                        30,
+                    ))
+                    .unwrap();
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(
+                        ((canvas_size.0 / 6) + 3) as i32,
+                        ((canvas_size.1 / 6) - 15) as i32,
+                        10,
+                        30,
+                    ))
+                    .unwrap();
+                self.canvas.present();
+                continue;
+            }
+
             self.nes.borrow_mut().tick();
 
             if self.nes.borrow().get_shift_strobe() || cycle_interrupt_timer == 0 {
@@ -133,7 +172,6 @@ impl SDLUI {
                 frame_count += 1;
 
                 let mut pixel_i = 0;
-                let mut update = false;
                 for y in 0..240 {
                     for x in 0..256 {
                         let color = framebuffer[y][x];
@@ -147,16 +185,13 @@ impl SDLUI {
                             screen_buff[pixel_i + 0] = r;
                             screen_buff[pixel_i + 1] = g;
                             screen_buff[pixel_i + 2] = b;
-                            update = true;
                         }
                         pixel_i += 3;
                     }
                 }
-                if update {
-                    texture.update(None, &screen_buff, 256 * 3).unwrap();
-                    self.canvas.copy(&texture, None, None).unwrap();
-                    self.canvas.present();
-                }
+                texture.update(None, &screen_buff, 256 * 3).unwrap();
+                self.canvas.copy(&texture, None, None).unwrap();
+                self.canvas.present();
 
                 let elapsed = fps_timer.elapsed();
                 if elapsed < time::Duration::from_millis(16) {
