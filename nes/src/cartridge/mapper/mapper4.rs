@@ -116,7 +116,7 @@ impl Mapper4 {
             [r6, r7, second_last, last]
         };
 
-        0x2000 * banks[(addr as usize - 0x8000) / 0x2000] as usize
+        0x2000 * (banks[(addr as usize - 0x8000) / 0x2000] % (self.n_prg_banks * 2)) as usize
     }
 }
 

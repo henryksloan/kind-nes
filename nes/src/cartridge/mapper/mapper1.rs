@@ -39,7 +39,7 @@ impl Mapper1 {
             control_register: 0b01100, // "MMC1 seems to reliably power on in the last bank"
             chr_bank_0: 0,
             chr_bank_1: 0,
-            prg_bank: 0,
+            prg_bank: 0b10000,
         }
     }
 }
@@ -84,11 +84,7 @@ impl Memory for Mapper1 {
 
     fn peek(&self, addr: u16) -> u8 {
         if 0x6000 <= addr && addr <= 0x7FFF {
-            return if self.prg_bank >> 4 == 0 {
-                self.prg_ram[(addr as usize) - 0x6000]
-            } else {
-                0
-            };
+            return self.prg_ram[(addr as usize) - 0x6000];
         }
 
         if addr <= 0x0FFF {
@@ -169,6 +165,10 @@ impl Memory for Mapper1 {
             if self.prg_bank >> 4 == 0 {
                 self.prg_ram[(addr as usize) - 0x6000] = data;
             }
+            return;
+        }
+
+        if addr < 0x8000 {
             return;
         }
 

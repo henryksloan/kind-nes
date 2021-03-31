@@ -35,8 +35,10 @@ impl Memory for Mapper0 {
     fn peek(&self, addr: u16) -> u8 {
         if addr <= 0x1FFF {
             self.chr_mem[addr as usize % self.chr_mem.len()]
-        } else {
+        } else if addr >= 0x8000 {
             self.prg_rom[((addr as usize - 0x8000) % (self.n_prg_banks as usize * 0x4000))]
+        } else {
+            0
         }
     }
 
@@ -46,7 +48,7 @@ impl Memory for Mapper0 {
                 let len = self.chr_mem.len();
                 self.chr_mem[addr as usize % len] = data;
             }
-        } else {
+        } else if addr >= 0x8000 {
             self.prg_rom[((addr as usize - 0x8000) % (self.n_prg_banks as usize * 0x4000))] = data;
         }
     }
