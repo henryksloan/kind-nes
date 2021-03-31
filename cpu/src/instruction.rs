@@ -88,7 +88,6 @@ lazy_static! {
         add("TYA", vec![(0x98, IMP, 2)]);
 
         // https://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
-        // TODO: http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
         add("*NOP", vec![(0x80, IMM, 2),
                         (0x82, IMM, 2), (0xC2, IMM, 2), (0xE2, IMM, 2),
                         (0x04, ZER, 3), (0x44, ZER, 3), (0x64, ZER, 3),
@@ -115,7 +114,7 @@ lazy_static! {
         add("*ARR", vec![(0x6B, IMM, 2)]);
         add("*SAX", vec![(0x83, INX, 6), (0x87, ZER, 3), (0x8F, ABS, 4), (0x97, ZEY, 4)]);
         add("*SBC", vec![(0xEB, IMM, 2)]);
-        add("*LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAB, IMM, 4), (0xAF, ABS, 4),
+        add("*LAX", vec![(0xA3, INX, 6), (0xA7, ZER, 3), (0xAB, IMM, 2), (0xAF, ABS, 4),
                         (0xB3, INY, 5), (0xB7, ZEY, 4), (0xBF, ABY, 4)]);
         add("*LAS", vec![(0xBB, ABY, 4)]);
         add("*DCP", vec![(0xC3, INX, 8), (0xC7, ZER, 5), (0xCF, ABS, 6), (0xD3, INY, 8),
@@ -127,6 +126,8 @@ lazy_static! {
         add("*SHY", vec![(0x9C, ABX, 5)]);
         add("*AXA", vec![(0x93, INY, 6), (0x9F, ABX, 5)]);
         add("*AXS", vec![(0xCB, IMM, 2)]);
+        add("*XAA", vec![(0x8B, IMM, 2)]);
+        add("*TAS", vec![(0x9B, ABY, 5)]);
         map
     };
 }

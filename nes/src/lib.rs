@@ -81,6 +81,7 @@ impl NES {
     }
 
     pub fn reset(&mut self) {
+        // TODO: It seems that something isn't resetting, causing some (mainly test) roms to run extremely slowly
         self.cpu.borrow_mut().reset();
         self.ppu.borrow_mut().reset();
         self.apu.borrow_mut().reset();
@@ -126,7 +127,7 @@ impl NES {
         self.cart.borrow_mut().cycle(); // TODO: Probably per-ppu tick for some mappers
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
-            self.cpu.borrow_mut().nmi();
+            self.cpu.borrow_mut().nmi_timer = 2;
         } else if self.cart.borrow_mut().check_irq() || self.apu.borrow_mut().check_irq() {
             self.cpu.borrow_mut().irq();
         }
