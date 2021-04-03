@@ -196,7 +196,7 @@ impl Memory for Mapper1 {
             } else if 0xC000 <= addr && addr <= 0xDFFF {
                 self.chr_bank_1 = self.shift_register;
             } else {
-                self.prg_bank = self.shift_register;
+                self.prg_bank = (self.shift_register) % (self.n_prg_banks as u8);
             }
             self.shift_register = 0b10000;
             self.shift_write_count = 0;

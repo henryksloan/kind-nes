@@ -52,10 +52,11 @@ impl Cartridge {
                 n_chr_banks,
                 prg_data,
                 chr_data,
-                meta.submapper_num == 1,
+                meta.submapper_num == Some(1),
             )),
             7 => Box::from(Mapper7::new(n_prg_banks, prg_data)),
             9 => Box::from(Mapper9::new(n_prg_banks, prg_data, chr_data)),
+            71 => Box::from(Mapper71::new(n_prg_banks, prg_data)),
             _ => return Err("unsupported mapper"),
         };
 
