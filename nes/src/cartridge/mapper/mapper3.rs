@@ -31,7 +31,8 @@ impl Memory for Mapper3 {
         if addr <= 0x1FFF {
             self.chr_rom[(self.chr_bank as usize * 0x2000) + addr as usize]
         } else if 0x8000 <= addr {
-            self.prg_rom[addr as usize - 0x8000]
+            let len = self.prg_rom.len();
+            self.prg_rom[(addr as usize - 0x8000) % len]
         } else {
             0x0
         }

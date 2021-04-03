@@ -27,6 +27,8 @@ pub struct NES {
     cart: Rc<RefCell<Cartridge>>,
     joy1: Rc<RefCell<dyn Controller>>,
     joy2: Rc<RefCell<dyn Controller>>,
+
+    pub paused: bool,
 }
 
 impl NES {
@@ -74,7 +76,16 @@ impl NES {
             cart,
             joy1,
             joy2,
+            paused: false,
         }
+    }
+
+    pub fn reset(&mut self) {
+        // TODO: It seems that something isn't resetting, causing some (mainly test) roms to run extremely slowly
+        self.cpu.borrow_mut().reset();
+        self.ppu.borrow_mut().reset();
+        self.apu.borrow_mut().reset();
+        self.cart.borrow_mut().reset();
     }
 
     /// Load a ROM from a file and reset the system, returning whether it succeeded
@@ -96,6 +107,10 @@ impl NES {
     }
 
     pub fn tick(&mut self) {
+        if self.paused {
+            return;
+        }
+
         self.ppu.borrow_mut().frame_ready = false;
         if let Some(log) = self.cpu.borrow_mut().tick() {
             println!("{}", log);
@@ -112,7 +127,7 @@ impl NES {
         self.cart.borrow_mut().cycle(); // TODO: Probably per-ppu tick for some mappers
         if self.ppu.borrow().nmi {
             self.ppu.borrow_mut().nmi = false;
-            self.cpu.borrow_mut().nmi();
+            self.cpu.borrow_mut().nmi_timer = 2;
         } else if self.cart.borrow_mut().check_irq() || self.apu.borrow_mut().check_irq() {
             self.cpu.borrow_mut().irq();
         }

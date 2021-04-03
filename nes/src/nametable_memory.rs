@@ -10,11 +10,12 @@ pub struct NametableMemory {
     memory: RAM,
 }
 
+// TODO: I think FourScreen should generally map in part or entirely to cartridge memory
 impl NametableMemory {
     pub fn new(cart: Rc<RefCell<Cartridge>>) -> Self {
         Self {
             cart,
-            memory: RAM::new(0x400 * 4, 0x0000),
+            memory: RAM::new(0x400 * 8, 0x0000),
         }
     }
 
@@ -24,19 +25,15 @@ impl NametableMemory {
         if _addr >= 0x3000 {
             _addr -= 0x1000;
         }
-        let mut fix_4s = 0;
         let nt_mirroring = match self.cart.borrow().get_nametable_mirroring() {
             Mirroring::Vertical => [0, 1, 0, 1],
             Mirroring::Horizontal => [0, 0, 1, 1],
-            Mirroring::FourScreen => {
-                fix_4s = 0x2000;
-                [0, 1, 2, 3]
-            }
+            Mirroring::FourScreen => [0, 1, 2, 3],
             Mirroring::SingleScreenUpper => [1, 1, 1, 1],
             Mirroring::SingleScreenLower => [0, 0, 0, 0],
         };
 
-        nt_mirroring[((_addr - 0x2000) / 0x400) as usize] * 0x400 + (_addr % 0x400) + fix_4s
+        nt_mirroring[((_addr - 0x2000) / 0x400) as usize] * 0x400 + (_addr % 0x400)
     }
 }
 

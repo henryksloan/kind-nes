@@ -19,7 +19,7 @@ use nwd::NwgUi;
 use nwg::NativeUi;
 
 #[derive(Default, NwgUi)]
-pub struct BasicApp {
+pub struct GameWindow {
     nes: Rc<RefCell<NES>>,
 
     #[nwg_control(size: (256 * 3, 240 * 3), position: (300, 300), title: "KindNES", flags: "WINDOW|VISIBLE")]
@@ -29,21 +29,35 @@ pub struct BasicApp {
     file_menu: nwg::Menu,
 
     #[nwg_control(text: "Open ROM", parent: file_menu)]
-    #[nwg_events( OnMenuItemSelected: [BasicApp::open_rom_dialog] )]
+    #[nwg_events( OnMenuItemSelected: [GameWindow::open_rom_dialog] )]
     open_item: nwg::MenuItem,
 
     #[nwg_control(parent: file_menu)]
     exit_separator: nwg::MenuSeparator,
 
     #[nwg_control(text: "Exit", parent: file_menu)]
-    #[nwg_events( OnMenuItemSelected: [BasicApp::exit] )]
+    #[nwg_events( OnMenuItemSelected: [GameWindow::exit] )]
     exit_item: nwg::MenuItem,
+
+    // TODO: Disable the children of this (but not the top-level) when no game is inserted
+    #[nwg_control(text: "Game")]
+    game_menu: nwg::Menu,
+
+    // TODO: Change the button to resume when it's paused
+    // TODO: Probably also bind it to escape... should that be build into the SDL ui?
+    #[nwg_control(text: "Pause", parent: game_menu)]
+    #[nwg_events( OnMenuItemSelected: [GameWindow::pause] )]
+    pause_item: nwg::MenuItem,
+
+    #[nwg_control(text: "Reset", parent: game_menu)]
+    #[nwg_events( OnMenuItemSelected: [GameWindow::reset] )]
+    reset_item: nwg::MenuItem,
 
     #[nwg_resource(action: FileDialogAction::Open, title: "Open a .NES file")]
     file_dialog: nwg::FileDialog,
 }
 
-impl BasicApp {
+impl GameWindow {
     fn open_rom_dialog(&self) {
         if self.file_dialog.run(Some(&self.window)) {
             if let Ok(item) = self.file_dialog.get_selected_item() {
@@ -74,6 +88,16 @@ impl BasicApp {
         nwg::stop_thread_dispatch();
         std::process::exit(0);
     }
+
+    fn reset(&self) {
+        self.nes.borrow_mut().reset();
+    }
+
+    fn pause(&self) {
+        let paused = self.nes.borrow().paused;
+        self.nes.borrow_mut().paused = !paused;
+        self.pause_item.set_checked(!paused);
+    }
 }
 
 fn main() {
@@ -82,7 +106,7 @@ fn main() {
 
     nwg::init().expect("Failed to init Native Windows GUI");
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
-    let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
+    let app = GameWindow::build_ui(Default::default()).expect("Failed to build UI");
 
     let [total_width, total_height] = [nwg::Monitor::width(), nwg::Monitor::height()];
     let (width, height) = (256 * 3, 240 * 3);

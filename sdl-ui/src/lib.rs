@@ -6,6 +6,7 @@ use std::thread;
 use std::time;
 
 use sdl2::audio::AudioSpecDesired;
+use sdl2::controller::{Axis, Button};
 use sdl2::event::Event as SDL_Event;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::PixelFormatEnum;
@@ -40,7 +41,22 @@ impl SDLUI {
     }
 
     pub fn render_loop(&mut self) {
+        let game_controller_subsystem = self.sdl_context.game_controller().unwrap();
+        let available = game_controller_subsystem
+            .num_joysticks()
+            .map_err(|e| format!("can't enumerate joysticks: {}", e))
+            .unwrap();
+        let controller = (0..available)
+            .find_map(|id| {
+                if !game_controller_subsystem.is_game_controller(id) {
+                    return None;
+                }
+                game_controller_subsystem.open(id).ok()
+            })
+            .expect("Couldn't open any controller");
+
         self.canvas.set_scale(3.0, 3.0).unwrap();
+        self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
         let mut event_pump = self.sdl_context.event_pump().unwrap();
 
         let creator = self.canvas.texture_creator();
@@ -83,14 +99,52 @@ impl SDLUI {
         let cycles_per_interrupt = 50_000;
 
         let mut fps_timer = time::Instant::now();
-        loop {
+        'main_loop: loop {
             if !self.nes.borrow().has_cartridge() {
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => break 'main_loop,
                         _ => {}
                     }
                 }
+                continue;
+            }
+
+            if self.nes.borrow().paused {
+                for event in event_pump.poll_iter() {
+                    match event {
+                        SDL_Event::Quit { .. } => break 'main_loop,
+                        _ => {}
+                    }
+                }
+
+                // Draw the game screen below a gray tint and a pause icon (two parallel lines)
+                self.canvas.copy(&texture, None, None).unwrap();
+                self.canvas
+                    .set_draw_color(sdl2::pixels::Color::RGBA(50, 50, 50, 215));
+                let canvas_size = self.canvas.output_size().unwrap();
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(0, 0, canvas_size.0, canvas_size.1))
+                    .unwrap();
+                self.canvas
+                    .set_draw_color(sdl2::pixels::Color::RGB(225, 25, 25));
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(
+                        ((canvas_size.0 / 6) - 13) as i32,
+                        ((canvas_size.1 / 6) - 15) as i32,
+                        10,
+                        30,
+                    ))
+                    .unwrap();
+                self.canvas
+                    .fill_rect(sdl2::rect::Rect::new(
+                        ((canvas_size.0 / 6) + 3) as i32,
+                        ((canvas_size.1 / 6) - 15) as i32,
+                        10,
+                        30,
+                    ))
+                    .unwrap();
+                self.canvas.present();
                 continue;
             }
 
@@ -99,15 +153,28 @@ impl SDLUI {
             if self.nes.borrow().get_shift_strobe() || cycle_interrupt_timer == 0 {
                 for event in event_pump.poll_iter() {
                     match event {
-                        SDL_Event::Quit { .. } => std::process::exit(0),
+                        SDL_Event::Quit { .. } => break 'main_loop,
                         _ => {}
                     }
                 }
+                const DEAD_ZONE: i16 = 10_000;
+                let joy_x = controller.axis(Axis::LeftX);
+                let joy_y = controller.axis(Axis::LeftY);
+                let joy_input = vec![
+                    joy_x > DEAD_ZONE || controller.button(Button::DPadRight), // Right
+                    joy_x < -DEAD_ZONE || controller.button(Button::DPadLeft), // Left
+                    joy_y > DEAD_ZONE || controller.button(Button::DPadDown),  // Down
+                    joy_y < -DEAD_ZONE || controller.button(Button::DPadUp),   // Up
+                    controller.button(Button::Start),                          // Start
+                    controller.button(Button::Back),                           // Select
+                    controller.button(Button::B),                              // B
+                    controller.button(Button::A),                              // A
+                ];
 
                 let mut controller_byte = 0;
                 let kb_state = event_pump.keyboard_state();
-                for scancode in &controls {
-                    let bit = kb_state.is_scancode_pressed(*scancode) as u8;
+                for i in 0..controls.len() {
+                    let bit = (kb_state.is_scancode_pressed(controls[i]) || joy_input[i]) as u8;
                     controller_byte <<= 1;
                     controller_byte |= bit;
                 }
@@ -133,30 +200,21 @@ impl SDLUI {
                 frame_count += 1;
 
                 let mut pixel_i = 0;
-                let mut update = false;
                 for y in 0..240 {
                     for x in 0..256 {
                         let color = framebuffer[y][x];
                         let c = COLORS[(color as usize) % 64];
                         let (r, g, b) =
                             ((c >> 16) as u8, ((c >> 8) & 0xFF) as u8, (c & 0xFF) as u8);
-                        if screen_buff[pixel_i + 0] != r
-                            || screen_buff[pixel_i + 1] != g
-                            || screen_buff[pixel_i + 2] != b
-                        {
-                            screen_buff[pixel_i + 0] = r;
-                            screen_buff[pixel_i + 1] = g;
-                            screen_buff[pixel_i + 2] = b;
-                            update = true;
-                        }
+                        screen_buff[pixel_i + 0] = r;
+                        screen_buff[pixel_i + 1] = g;
+                        screen_buff[pixel_i + 2] = b;
                         pixel_i += 3;
                     }
                 }
-                if update {
-                    texture.update(None, &screen_buff, 256 * 3).unwrap();
-                    self.canvas.copy(&texture, None, None).unwrap();
-                    self.canvas.present();
-                }
+                texture.update(None, &screen_buff, 256 * 3).unwrap();
+                self.canvas.copy(&texture, None, None).unwrap();
+                self.canvas.present();
 
                 let elapsed = fps_timer.elapsed();
                 if elapsed < time::Duration::from_millis(16) {

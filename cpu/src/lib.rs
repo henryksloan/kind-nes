@@ -35,6 +35,7 @@ pub struct CPU {
     wait_cycles: u32,
     cycles: u64,
     pub log: bool,
+    pub nmi_timer: u8,
 
     memory: Box<dyn Memory>,
 }
@@ -51,10 +52,12 @@ impl CPU {
             wait_cycles: 0,
             cycles: 0,
             log: false,
+            nmi_timer: 0,
             memory,
         }
     }
 
+    // TODO: "Reset should set I flag, subtract 3 from S, nothing more."
     pub fn reset(&mut self) {
         self.a = 0;
         self.x = 0;
@@ -63,6 +66,7 @@ impl CPU {
         self.p = StatusRegister::from_bits(0b00100100).unwrap();
         self.wait_cycles = 0;
         self.cycles = 7;
+        self.nmi_timer = 0;
 
         self.pc = self.memory.read_u16(RST_VEC);
     }
@@ -83,6 +87,13 @@ impl CPU {
     }
 
     pub fn step(&mut self) -> Option<String> {
+        if self.nmi_timer > 0 {
+            self.nmi_timer -= 1;
+            if self.nmi_timer == 0 {
+                self.nmi();
+            }
+        }
+
         let opcode = self.memory.read(self.pc);
         let op = INSTRUCTIONS
             .get(&opcode)
@@ -314,24 +325,30 @@ impl CPU {
             "TYA" => self.a = self.transfer_op(self.y, false),
 
             // https://wiki.nesdev.com/w/index.php/Programming_with_unofficial_opcodes
-            // Combined instructions:
             "*NOP" => {
                 if self.memory.peek(self.pc - 1) & 0xF == 0xC && self.get_operand_address(mode).1 {
                     self.wait_cycles += 1;
                 }
             }
+            "*XAA" => self.xaa(mode),
+            "*TAS" => {
+                self.s = self.a & self.x;
+                self.store_high_op(self.s, mode);
+            }
+            // Combined instructions:
             "*ALR" => self.combined_op(vec![0x29, 0x4A]),
             "*ANC" => self.anc(),
-            "*ARR" => self.arr(&mode),
-            "*AXS" => self.axs(&mode),
+            "*ARR" => self.arr(mode),
+            "*AXS" => self.axs(mode),
             "*LAX" => self.combined_op_str(vec!["LDA", "TAX"], mode, true),
+            "*LAS" => self.las(mode),
             "*SAX" => {
                 let addr = self.get_operand_address(mode).0;
                 self.memory.write(addr, self.a & self.x);
             }
-            "*SHY" => self.store_high_op(self.y, &mode),
-            "*SHX" => self.store_high_op(self.x, &mode),
-            "*AXA" => self.store_high_op(self.a & self.x, &mode),
+            "*SHY" => self.store_high_op(self.y, mode),
+            "*SHX" => self.store_high_op(self.x, mode),
+            "*AXA" => self.store_high_op(self.a & self.x, mode),
 
             // RMW instructions
             "*DCP" => self.combined_op_str(vec!["DEC", "CMP"], mode, false),
@@ -418,7 +435,11 @@ impl CPU {
 
     /// Store data from a register into memory
     fn store_op(&mut self, reg: u8, mode: &AddressingMode) {
-        let (addr, _) = self.get_operand_address(mode);
+        let (addr, page_cross) = self.get_operand_address(mode);
+        if !page_cross && (*mode == AddressingMode::ABY) {
+            // TODO: This makes ppu_read_buffer test work better, but verify this
+            self.memory.read(addr); // Dummy read
+        }
         self.memory.write(addr, reg);
     }
 
@@ -627,6 +648,31 @@ impl CPU {
         self.p.set(StatusRegister::CARRY, data <= a_and_x);
         self.p.set(StatusRegister::NEGATIVE, (self.x & 0x80) != 0);
         self.p.set(StatusRegister::ZERO, self.x == 0);
+    }
+
+    /// Unofficial: Load A, X, and S with (low byte of the address) & S
+    fn las(&mut self, mode: &AddressingMode) {
+        let (addr, page_cross) = self.get_operand_address(mode);
+        let _ = self.memory.read(addr);
+        let val = (addr as u8) & self.s;
+        self.a = val;
+        self.x = val;
+        self.s = val;
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
+
+        if page_cross {
+            self.wait_cycles += 1;
+        }
+    }
+
+    /// Unofficial: http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
+    fn xaa(&mut self, mode: &AddressingMode) {
+        let (addr, _) = self.get_operand_address(mode);
+        let data = self.memory.read(addr);
+        self.a = self.a & self.x & data;
+        self.p.set(StatusRegister::NEGATIVE, (self.a & 0x80) != 0);
+        self.p.set(StatusRegister::ZERO, self.a == 0);
     }
 }
 

@@ -24,6 +24,7 @@ pub struct APU {
     frame_counter_cycle: u64,
     frame_sequence_len: u8,
     frame_sequence_step: u8,
+    bus_latch: u8,
 
     irq_disable: bool,
     frame_irq: bool,
@@ -48,6 +49,7 @@ impl APU {
             frame_counter_cycle: 0,
             frame_sequence_len: 4,
             frame_sequence_step: 0,
+            bus_latch: 0,
 
             irq_disable: false,
             frame_irq: false,
@@ -89,6 +91,7 @@ impl APU {
         self.frame_counter_cycle = 0;
         self.frame_sequence_len = 4;
         self.frame_sequence_step = 0;
+        self.bus_latch = 0;
 
         self.dmc.irq = false;
         self.irq_disable = false;
@@ -166,15 +169,20 @@ impl APU {
 // https://wiki.nesdev.com/w/index.php/APU_registers
 impl Memory for APU {
     fn read(&mut self, addr: u16) -> u8 {
-        assert!(addr == 0x4015);
+        if addr != 0x4015 {
+            return 0;
+        }
 
         let data = self.peek(addr);
         self.frame_irq = false;
+        self.bus_latch = data;
         data
     }
 
     fn peek(&self, addr: u16) -> u8 {
-        assert!(addr == 0x4015);
+        if addr != 0x4015 {
+            return 0;
+        }
 
         ((self.dmc.irq as u8) << 7)
             | ((self.frame_irq as u8) << 6)
@@ -188,6 +196,7 @@ impl Memory for APU {
     fn write(&mut self, addr: u16, data: u8) {
         assert!((0x4000 <= addr && addr <= 0x4017) && addr != 0x4014);
 
+        self.bus_latch = data;
         if 0x4000 <= addr && addr <= 0x4003 {
             self.pulse1.update_register(addr - 0x4000, data);
         } else if 0x4004 <= addr && addr <= 0x4007 {

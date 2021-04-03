@@ -4,13 +4,13 @@ KindNES is a reasonably accurate NES emulator written in Rust. It strives for po
 ### Usage
 Either give a .NES ROM file as a command line argument, or use the File > Open ROM menu bar option (currently only on the Windows version).
 
-| Button | Key |
-| --- | --- |
-| D-Pad | Arrow keys |
-| A button | X |
-| B button | Z |
-| Start | Enter |
-| Select | Right shift |
+| Button | Key | Gamepad |
+| --- | --- | --- |
+| D-Pad | Arrow keys | D-Pad or joystick |
+| A button | X | A (Playstation X) |
+| B button | Z | B (Playstation O) |
+| Start | Enter | Start |
+| Select | Right shift | Select |
 
 # Downloads
 Downloads can be found on the [releases page](https://github.com/henryksloan/kind-nes/releases). Currently, only the Windows version is packaged, so users of other platforms should build KindNES as described below. There are plans for Linux (AppImage) packages in the near future, and eventually MacOS packages.
@@ -50,7 +50,6 @@ KindNES supports most of the common NES mappers, meaning that it supports the ma
 ## Next steps
 - Improved UI
     - More menubar features
-        - Pause, (soft/hard) reset
     - An improved cross-platform UI with the same menubar features as the Windows version
         - First priority: Centralize basic features like [file dialogs](https://github.com/EmbarkStudios/nfd2) to sdl-ui shortcuts
         - Still looking for a GUI framework with great menubar support and SDL2 integration
@@ -63,7 +62,6 @@ KindNES supports most of the common NES mappers, meaning that it supports the ma
     - First, get perfect FPS control (it currently sleeps slightly too long at the end of frames)
     - Variable audio sample rate
 - Controls
-    - Gamepad support
     - Modifiable controls
     - Local multiplayer?
 
@@ -82,5 +80,6 @@ KindNES supports most of the common NES mappers, meaning that it supports the ma
     - Sound channel mixer
     - Step-in debugger
         - A GDB-style command prompt would be awesome
+- Distinguish between hard and soft reset
 - Cheats
 - TAS creation
