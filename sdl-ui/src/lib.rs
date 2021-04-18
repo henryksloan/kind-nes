@@ -46,14 +46,12 @@ impl SDLUI {
             .num_joysticks()
             .map_err(|e| format!("can't enumerate joysticks: {}", e))
             .unwrap();
-        let controller = (0..available)
-            .find_map(|id| {
-                if !game_controller_subsystem.is_game_controller(id) {
-                    return None;
-                }
-                game_controller_subsystem.open(id).ok()
-            })
-            .expect("Couldn't open any controller");
+        let controller_opt = (0..available).find_map(|id| {
+            if !game_controller_subsystem.is_game_controller(id) {
+                return None;
+            }
+            game_controller_subsystem.open(id).ok()
+        });
 
         self.canvas.set_scale(3.0, 3.0).unwrap();
         self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
@@ -158,18 +156,22 @@ impl SDLUI {
                     }
                 }
                 const DEAD_ZONE: i16 = 10_000;
-                let joy_x = controller.axis(Axis::LeftX);
-                let joy_y = controller.axis(Axis::LeftY);
-                let joy_input = vec![
-                    joy_x > DEAD_ZONE || controller.button(Button::DPadRight), // Right
-                    joy_x < -DEAD_ZONE || controller.button(Button::DPadLeft), // Left
-                    joy_y > DEAD_ZONE || controller.button(Button::DPadDown),  // Down
-                    joy_y < -DEAD_ZONE || controller.button(Button::DPadUp),   // Up
-                    controller.button(Button::Start),                          // Start
-                    controller.button(Button::Back),                           // Select
-                    controller.button(Button::B),                              // B
-                    controller.button(Button::A),                              // A
-                ];
+                let joy_input = if let Some(controller) = &controller_opt {
+                    let joy_x = controller.axis(Axis::LeftX);
+                    let joy_y = controller.axis(Axis::LeftY);
+                    vec![
+                        joy_x > DEAD_ZONE || controller.button(Button::DPadRight), // Right
+                        joy_x < -DEAD_ZONE || controller.button(Button::DPadLeft), // Left
+                        joy_y > DEAD_ZONE || controller.button(Button::DPadDown),  // Down
+                        joy_y < -DEAD_ZONE || controller.button(Button::DPadUp),   // Up
+                        controller.button(Button::Start),                          // Start
+                        controller.button(Button::Back),                           // Select
+                        controller.button(Button::B),                              // B
+                        controller.button(Button::A),                              // A
+                    ]
+                } else {
+                    vec![false; 8]
+                };
 
                 let mut controller_byte = 0;
                 let kb_state = event_pump.keyboard_state();
