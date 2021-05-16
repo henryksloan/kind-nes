@@ -24,9 +24,9 @@ impl Memory for ROM {
     }
 
     fn write(&mut self, addr: u16, data: u8) {
-        panic!(format!(
+        panic!(
             "attempted to write {:X} to address {:X} in ROM",
             data, addr
-        ))
+        )
     }
 }
