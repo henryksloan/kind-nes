@@ -25,6 +25,12 @@ const COLORS: &'static [i32] = &[
     0x000000,
 ];
 
+const SAMPLE_RATE: usize = 96000;
+const DESIRED_AUDIO_DELAY_MS: usize = 60;
+const DELAY_SAMPLES: usize =
+    (SAMPLE_RATE as f32 * (DESIRED_AUDIO_DELAY_MS as f32 / 1000.)) as usize;
+const AUDIO_BUFF_THRESHOLD: usize = std::mem::size_of::<f32>() * DELAY_SAMPLES;
+
 pub struct SDLUI {
     sdl_context: Sdl,
     canvas: WindowCanvas,
@@ -66,9 +72,9 @@ impl SDLUI {
 
         let audio_subsystem = self.sdl_context.audio().unwrap();
         let desired_spec = AudioSpecDesired {
-            freq: Some(96000),
+            freq: Some(SAMPLE_RATE as i32),
             channels: Some(1), // mono
-            samples: None,     // default sample size
+            samples: Some(1024),
         };
 
         let device = audio_subsystem
@@ -97,6 +103,8 @@ impl SDLUI {
         let cycles_per_interrupt = 50_000;
 
         let mut fps_timer = time::Instant::now();
+        let mut audio_buff = Vec::new();
+        audio_buff.reserve(AUDIO_BUFF_THRESHOLD);
         'main_loop: loop {
             if !self.nes.borrow().has_cartridge() {
                 for event in event_pump.poll_iter() {
@@ -185,9 +193,18 @@ impl SDLUI {
                     .try_fill_controller_shift(controller_byte);
             }
 
+            // Basic dynamic sampling idea based on github.com/ltriant/nes:
+            // Keep the audio device fed with about DESIRED_AUDIO_DELAY_MS of samples,
+            // ceasing sampling while the device is above that threshold.
+            let mut buff = self.nes.borrow_mut().take_audio_buff();
+            if device.size() < AUDIO_BUFF_THRESHOLD as u32 {
+                audio_buff.append(&mut buff);
+            }
+
             let framebuffer_option = self.nes.borrow().get_new_frame();
             if let Some(framebuffer) = framebuffer_option {
-                device.queue(&self.nes.borrow_mut().take_audio_buff());
+                device.queue(&audio_buff);
+                audio_buff.clear();
                 if (frame_count + 1) % frames_per_rate_check == 0 {
                     if (frame_count + 1) % (frames_per_rate_check * checks_per_rate_report) == 0 {
                         self.canvas
