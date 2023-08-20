@@ -198,6 +198,10 @@ impl SDLUI {
             // ceasing sampling while the device is above that threshold.
             let mut buff = self.nes.borrow_mut().take_audio_buff();
             if device.size() < AUDIO_BUFF_THRESHOLD as u32 {
+                // Simple volume attenuation, since there's no audio mixing implementation yet
+                for entry in buff.iter_mut() {
+                    *entry *= 0.25;
+                }
                 audio_buff.append(&mut buff);
             }
 
